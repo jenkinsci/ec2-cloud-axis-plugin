@@ -6,7 +6,7 @@
     <version>1.509.1</version><!-- which version of Jenkins is this plugin built against? -->
   </parent>
 
-  <artifactId>ec2-axis</artifactId>
+  <artifactId>ec2-cloud-axis</artifactId>
   <version>1.0-SNAPSHOT</version>
   <packaging>hpi</packaging>
 

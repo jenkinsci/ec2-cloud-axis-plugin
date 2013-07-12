@@ -42,11 +42,6 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 	}
 	
 	@Override
-	public String getLabelString() {
-		return 	instanceLabel;
-	}
-	
-	@Override
 	public EC2Slave provision(TaskListener listener) throws AmazonClientException, IOException {
 		EC2Slave provisionedSlave = super.provision(listener);
 		provisionedSlave.setLabelString(instanceLabel);

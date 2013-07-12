@@ -108,13 +108,14 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return hasAvailableNode;
 	}
 
-	public static EC2AxisCloud getCloudToUse() {
+	public static EC2AxisCloud getCloudToUse(String ec2label) {
 		Iterator<Cloud> iterator = Jenkins.getInstance().clouds.iterator();
 		EC2AxisCloud cloudToUse = null;
 		while(iterator.hasNext()) {
 			Cloud next = iterator.next();
 			if (next instanceof EC2AxisCloud) {
-				cloudToUse = (EC2AxisCloud) next;
+				if (next.canProvision(new LabelAtom(ec2label)))
+					cloudToUse = (EC2AxisCloud) next;
 			}
 			
 		}

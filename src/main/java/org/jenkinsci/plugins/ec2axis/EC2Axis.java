@@ -58,7 +58,7 @@ public class EC2Axis extends LabelAxis {
 	public List<String> getValues() {
 		StaplerRequest currentRequest = getCurrentRequest();
 		if (currentRequest == null)
-			return Arrays.asList("cloud<"+ec2label+">");
+			return Arrays.asList("cloud "+ec2label+"");
 		
 		return getConfigurationForCurrentBuildBasedOnUrl(currentRequest);
 	}
@@ -82,7 +82,6 @@ public class EC2Axis extends LabelAxis {
 		MatrixBuild build = getProject(projectName).getBuild(buildNumber);
 		return getConfigurationsForBuild(build);
 	}
-
 	
 	private List<String> getConfigurationsForLastBuild(String currentRequestUrl) 
 	{
@@ -102,7 +101,7 @@ public class EC2Axis extends LabelAxis {
 		for (MatrixRun matrixRun : runs) {
 			if (matrixRun.getParentBuild().getNumber() == build.getNumber()) {
 				String runName = matrixRun.getParent().getName();
-				String configurationName = runName.split("=")[1];
+				String configurationName = runName.replaceAll(getName()+"=([^,]*).*", "$1"); 
 				builtOn.add(configurationName);
 			}
 		}
@@ -176,6 +175,4 @@ public class EC2Axis extends LabelAxis {
 	        return c;
 	    }
 	}
-
-
 }

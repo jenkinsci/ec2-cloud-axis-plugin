@@ -10,6 +10,7 @@ import hudson.matrix.LabelAxis;
 import hudson.matrix.MatrixBuild;
 import hudson.matrix.MatrixProject;
 import hudson.model.AutoCompletionCandidates;
+import hudson.model.BuildListener;
 import hudson.model.Messages;
 import hudson.model.Label;
 import hudson.model.labels.LabelAtom;
@@ -51,16 +52,20 @@ public class EC2Axis extends LabelAxis {
 	@Override
 	public List<String> rebuild(MatrixBuild.MatrixBuildExecution context) {
 		EC2AxisCloud cloudToUse = EC2AxisCloud.getCloudToUse(ec2label);
-		return cloudToUse.allocateSlavesLabels(ec2label, numberOfSlaves);
+		return cloudToUse.allocateSlavesLabels(context, ec2label, numberOfSlaves);
 	}
 
 	@Override
 	public List<String> getValues() {
 		StaplerRequest currentRequest = getCurrentRequest();
 		if (currentRequest == null)
-			return Arrays.asList("cloud "+ec2label+"");
+			return makeEmptyExecution();
 		
 		return getConfigurationForCurrentBuildBasedOnUrl(currentRequest);
+	}
+
+	private List<String> makeEmptyExecution() {
+		return Arrays.asList("cloud "+ec2label);
 	}
 
 	private List<String> getConfigurationForCurrentBuildBasedOnUrl( StaplerRequest currentRequest) 
@@ -88,6 +93,8 @@ public class EC2Axis extends LabelAxis {
 		final String projectNameExtractedFromUrl = currentRequestUrl.replaceAll(".*/job/([^/]*).*", "$1");
 		
 		final MatrixProject matrixProject = getProject(projectNameExtractedFromUrl);
+		if (matrixProject == null)
+			return makeEmptyExecution();
 		final MatrixBuild lastBuild = matrixProject.getLastBuild();
 		
 		return getConfigurationsForBuild(lastBuild);
@@ -95,7 +102,8 @@ public class EC2Axis extends LabelAxis {
 	
 	private List<String> getConfigurationsForBuild(MatrixBuild build) {
 		if (build == null)
-			return Arrays.asList();
+			return makeEmptyExecution();
+		
 		final List<MatrixRun> runs = build.getRuns();
 		final List<String> builtOn = new LinkedList<String>();
 		for (MatrixRun matrixRun : runs) {
@@ -105,6 +113,8 @@ public class EC2Axis extends LabelAxis {
 				builtOn.add(configurationName);
 			}
 		}
+		if (builtOn.size() == 0)
+			return makeEmptyExecution();
 		return builtOn;
 	}
 

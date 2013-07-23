@@ -17,7 +17,7 @@ import hudson.model.labels.LabelAtom;
 import hudson.slaves.Cloud;
 import hudson.slaves.NodeProvisioner.PlannedNode;
 
-import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -27,15 +27,10 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import javax.servlet.ServletException;
-
 import jenkins.model.Jenkins;
 
 import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.QueryParameter;
-import org.kohsuke.stapler.StaplerRequest;
-import org.kohsuke.stapler.StaplerResponse;
 
 public class EC2AxisCloud extends AmazonEC2Cloud {
 
@@ -73,7 +68,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 				if (((EC2AxisCloud)next).acceptsLabel(new LabelAtom(ec2label)))
 					cloudToUse = (EC2AxisCloud) next;
 			}
-			
 		}
 		return cloudToUse;
 	}
@@ -81,9 +75,12 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		
 	@Override
 	public Collection<PlannedNode> provision(Label label, int excessWorkload) {
-		
 		JobAllocationStatus jobStatus = jobsByRequestedLabels.get(label.getDisplayName());
+		if (jobStatus.isAllocated()) {
+			return Arrays.asList();
+		}
 		jobStatus.setAllocated();
+		return super.provision(label, excessWorkload);
 	}
 	
 
@@ -91,10 +88,21 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return new BuildListenerImplementation(project);
 	}
 
-	public List<String> allocateSlavesLabels(MatrixBuildExecution context, String ec2Label, Integer numberOfSlaves) {
+	public synchronized List<String> allocateSlavesLabels(MatrixBuildExecution context, String ec2Label, Integer numberOfSlaves) {
 		removePreviousLabelsAllocatedToGivenProject(context.getProject());
 		addListenerToCleanupAllocationTableOnBuildCompletion(context);
 		
+		LinkedList<String> allocatedLabels = allocateLabels(ec2Label, numberOfSlaves);
+		
+		for (String allocatedLabel : allocatedLabels) {
+			jobsByRequestedLabels.put(allocatedLabel, new JobAllocationStatus(context.getProject()));
+		}
+		
+		return allocatedLabels;
+	}
+
+	private LinkedList<String> allocateLabels(String ec2Label,
+			Integer numberOfSlaves) {
 		Set<Label> labels = Jenkins.getInstance().getLabels();
 		LinkedList<String> allocatedLabels = new LinkedList<String>();
 		int lastAllocatedSlaveNumber = 0;
@@ -127,11 +135,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			int slaveNumber = lastAllocatedSlaveNumber+i;
 			allocatedLabels.add(ec2Label + SLAVE_NUM_SEPARATOR + slaveNumber);
 		}
-		
-		for (String allocatedLabel : allocatedLabels) {
-			jobsByRequestedLabels.put(allocatedLabel, new JobAllocationStatus(context.getProject()));
-		}
-		
 		return allocatedLabels;
 	}
 
@@ -188,6 +191,9 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 
 	private boolean hasAvailableNode(Label label) {
+		if (jobsByRequestedLabels.containsKey(label.getName()))
+			return false;
+		
 		Set<Node> nodes = label.getNodes();
 		return  isLabelAvailable(nodes);
 	}

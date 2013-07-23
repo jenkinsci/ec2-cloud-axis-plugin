@@ -10,7 +10,6 @@ import hudson.matrix.LabelAxis;
 import hudson.matrix.MatrixBuild;
 import hudson.matrix.MatrixProject;
 import hudson.model.AutoCompletionCandidates;
-import hudson.model.BuildListener;
 import hudson.model.Messages;
 import hudson.model.Label;
 import hudson.model.labels.LabelAtom;

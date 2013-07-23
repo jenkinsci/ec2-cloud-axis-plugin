@@ -2,7 +2,9 @@ package hudson.plugins.ec2;
 
 import hudson.Extension;
 import hudson.matrix.MatrixBuild.MatrixBuildExecution;
+import hudson.matrix.MatrixProject;
 import hudson.model.BuildListener;
+import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.Cause;
 import hudson.model.Computer;
@@ -10,7 +12,6 @@ import hudson.model.Executor;
 import hudson.model.Job;
 import hudson.model.Label;
 import hudson.model.Node;
-import hudson.model.Queue;
 import hudson.model.Queue.Item;
 import hudson.model.Queue.Task;
 import hudson.model.labels.LabelAtom;
@@ -35,7 +36,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 public class EC2AxisCloud extends AmazonEC2Cloud {
 
 	private static final String SLAVE_NUM_SEPARATOR = "__";
-	private static final Map<String, JobAllocationStatus> jobsByRequestedLabels = new HashMap<String, JobAllocationStatus>();
+	private static final Map<String, JobAllocationManager> jobsByRequestedLabels = new HashMap<String, JobAllocationManager>();
 
 	@DataBoundConstructor
 	public EC2AxisCloud(String accessId, String secretKey, String region, String privateKey, String instanceCapStr, List<SlaveTemplate> templates) {
@@ -55,6 +56,8 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
     	String labelPrefix = StringUtils.substringBefore(displayName,SLAVE_NUM_SEPARATOR);
 		LabelAtom prefixAtom = new LabelAtom(labelPrefix);
     	Ec2AxisSlaveTemplate template = (Ec2AxisSlaveTemplate)super.getTemplate(prefixAtom);
+    	if (template == null)
+    		return null;
     	template.setInstanceLabel(displayName);
 		return template;
 	}
@@ -71,16 +74,34 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		}
 		return cloudToUse;
 	}
-
 		
 	@Override
 	public Collection<PlannedNode> provision(Label label, int excessWorkload) {
-		JobAllocationStatus jobStatus = jobsByRequestedLabels.get(label.getDisplayName());
+		JobAllocationManager jobStatus = jobsByRequestedLabels.get(label.getDisplayName());
+		if (jobStatus == null) {
+			if (label.getDisplayName().matches(SLAVE_NUM_SEPARATOR+"[0-9]+")) {
+				cancelAllItemsInQueueMatchingLabel(label);
+			}
+			return super.provision(label, excessWorkload);
+		}
+		
 		if (jobStatus.isAllocated()) {
+			jobStatus.abortBuildIfBootTimedOut();
 			return Arrays.asList();
 		}
 		jobStatus.setAllocated();
 		return super.provision(label, excessWorkload);
+	}
+
+	private void cancelAllItemsInQueueMatchingLabel(Label label) {
+		Queue queue = Jenkins.getInstance().getQueue();
+		Item[] items = queue.getItems();
+		for (Item item : items) {
+			Task task = item.task;
+			if (task.getAssignedLabel().getName().equals(label.getDisplayName())) {
+				queue.cancel(item);
+			}
+		}
 	}
 	
 
@@ -88,14 +109,15 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return new BuildListenerImplementation(project);
 	}
 
-	public synchronized List<String> allocateSlavesLabels(MatrixBuildExecution context, String ec2Label, Integer numberOfSlaves) {
+	public synchronized List<String> allocateSlavesLabels(MatrixBuildExecution context, String ec2Label, Integer numberOfSlaves, Integer instanceBootTimeoutLimit) {
 		removePreviousLabelsAllocatedToGivenProject(context.getProject());
 		addListenerToCleanupAllocationTableOnBuildCompletion(context);
 		
 		LinkedList<String> allocatedLabels = allocateLabels(ec2Label, numberOfSlaves);
 		
 		for (String allocatedLabel : allocatedLabels) {
-			jobsByRequestedLabels.put(allocatedLabel, new JobAllocationStatus(context.getProject()));
+			JobAllocationManager value = new JobAllocationManager((MatrixProject)context.getProject(), new LabelAtom(allocatedLabel), instanceBootTimeoutLimit);
+			jobsByRequestedLabels.put(allocatedLabel, value);
 		}
 		
 		return allocatedLabels;
@@ -154,21 +176,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return ec2axisTemplates;
 	}
 
-	private boolean isLabelMissingAllocation(String templateDisplayName) {
-		return !jobsByRequestedLabels.containsKey(templateDisplayName);
-	}
-
-	private void cancelAllItemsTiedToGivenLabel(String templateDisplayName) {
-		Queue queue = Jenkins.getInstance().getQueue();
-		Item[] items = queue.getItems();
-		for (Item item : items) {
-			Task task = item.task;
-			if (task.getAssignedLabel().getName().equals(templateDisplayName)) {
-				queue.cancel(item);
-			}
-		}
-	}
-
 	private Ec2AxisSlaveTemplate getTemplateGivenLabel(Label label) {
 		String displayName = label.getDisplayName();
 		if (displayName == null)
@@ -182,9 +189,9 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	
 
 	private void removePreviousLabelsAllocatedToGivenProject(Job<?, ?> requestingProject) {
-		Iterator<Entry<String, JobAllocationStatus>> iterator = jobsByRequestedLabels.entrySet().iterator();
+		Iterator<Entry<String, JobAllocationManager>> iterator = jobsByRequestedLabels.entrySet().iterator();
 		while(iterator.hasNext()) {
-			Entry<String, JobAllocationStatus> entry = iterator.next();
+			Entry<String, JobAllocationManager> entry = iterator.next();
 			if (entry.getValue().job.equals(requestingProject))
 				iterator.remove();
 		}

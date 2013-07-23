@@ -30,12 +30,18 @@ import org.kohsuke.stapler.StaplerRequest;
 
 public class EC2Axis extends LabelAxis {
 
+	private static final Integer DEFAULT_TIMEOUT = 600;
 	final private Integer numberOfSlaves;
 	private final String ec2label;
+	private final Integer instanceBootTimeoutLimit;
 
 	@DataBoundConstructor
-	public EC2Axis(String name, String ec2label, Integer numberOfSlaves ) {
+	public EC2Axis(String name, String ec2label, Integer numberOfSlaves, Integer instanceBootTimeoutLimit) {
 		super(name, Arrays.asList(ec2label.trim()));
+		if (instanceBootTimeoutLimit == null)
+			this.instanceBootTimeoutLimit = DEFAULT_TIMEOUT;
+		else
+			this.instanceBootTimeoutLimit = instanceBootTimeoutLimit;
 		this.ec2label = ec2label.trim();
 		this.numberOfSlaves = numberOfSlaves;
 	}
@@ -48,10 +54,14 @@ public class EC2Axis extends LabelAxis {
 		return numberOfSlaves;
 	}
 
+	public Integer getInstanceBootTimeoutLimit() {
+		return instanceBootTimeoutLimit;
+	}
+
 	@Override
 	public List<String> rebuild(MatrixBuild.MatrixBuildExecution context) {
 		EC2AxisCloud cloudToUse = EC2AxisCloud.getCloudToUse(ec2label);
-		return cloudToUse.allocateSlavesLabels(context, ec2label, numberOfSlaves);
+		return cloudToUse.allocateSlavesLabels(context, ec2label, numberOfSlaves, instanceBootTimeoutLimit);
 	}
 
 	@Override
@@ -138,7 +148,8 @@ public class EC2Axis extends LabelAxis {
 	        return new EC2Axis(
 	                formData.getString("name"),
 	                formData.getString("ec2label"),
-	                formData.getInt("numberOfSlaves")
+	                formData.getInt("numberOfSlaves"),
+	                formData.getInt("instanceBootTimeoutLimit")
 	        );
 	    }
 	    

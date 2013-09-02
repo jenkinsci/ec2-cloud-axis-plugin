@@ -14,11 +14,13 @@ public class JobAllocationManager {
 	private final Integer instanceBootTimeoutLimit;
 	private Label buildLabel;
 	private final long startedTime;
+	private final int matrixId;
 	
-	public JobAllocationManager(MatrixProject matrixProject, Label buildLabel, Integer instanceBootTimeoutLimit) {
+	public JobAllocationManager(MatrixProject matrixProject, Label buildLabel, Integer instanceBootTimeoutLimit, int matrixId) {
 		this.job = matrixProject;
 		this.buildLabel = buildLabel;
 		this.instanceBootTimeoutLimit = instanceBootTimeoutLimit;
+		this.matrixId = matrixId;
 		startedTime = System.currentTimeMillis();		
 	}
 	
@@ -28,6 +30,10 @@ public class JobAllocationManager {
 	
 	public boolean isAllocated() {
 		return allocated;
+	}
+	
+	public int getMatrixId() {
+		return matrixId;
 	}
 
 	public void abortBuildIfBootTimedOut() {

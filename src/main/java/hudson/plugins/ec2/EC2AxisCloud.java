@@ -4,7 +4,6 @@ import hudson.Extension;
 import hudson.matrix.MatrixBuild.MatrixBuildExecution;
 import hudson.matrix.MatrixProject;
 import hudson.model.BuildListener;
-import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.Cause;
 import hudson.model.Computer;
@@ -12,6 +11,7 @@ import hudson.model.Executor;
 import hudson.model.Job;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.model.Queue;
 import hudson.model.Queue.Item;
 import hudson.model.Queue.Task;
 import hudson.model.labels.LabelAtom;
@@ -59,6 +59,10 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
     	if (template == null)
     		return null;
     	template.setInstanceLabel(displayName);
+    	
+    	JobAllocationManager jobAllocationManager = jobsByRequestedLabels.get(displayName);
+    	template.setMatrixId(jobAllocationManager.getMatrixId());
+    	
 		return template;
 	}
 
@@ -79,7 +83,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	public Collection<PlannedNode> provision(Label label, int excessWorkload) {
 		JobAllocationManager jobStatus = jobsByRequestedLabels.get(label.getDisplayName());
 		if (jobStatus == null) {
-			if (label.getDisplayName().matches(SLAVE_NUM_SEPARATOR+"[0-9]+")) {
+			if (label.getDisplayName().matches(SLAVE_NUM_SEPARATOR+"[0-9]+$")) {
 				cancelAllItemsInQueueMatchingLabel(label);
 			}
 			return super.provision(label, excessWorkload);
@@ -93,7 +97,36 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return super.provision(label, excessWorkload);
 	}
 
-	private void cancelAllItemsInQueueMatchingLabel(Label label) {
+	public synchronized List<String> allocateSlavesLabels(
+			MatrixBuildExecution context, 
+			String ec2Label, 
+			Integer numberOfSlaves, 
+			Integer instanceBootTimeoutLimit)
+	{
+		removePreviousLabelsAllocatedToGivenProject(context.getProject());
+		addListenerToCleanupAllocationTableOnBuildCompletion(context);
+		
+		LinkedList<String> allocatedLabels = allocateLabels(ec2Label, numberOfSlaves);
+		
+		int matrixId = 0;
+		for (String allocatedLabel : allocatedLabels) {
+			JobAllocationManager value = new JobAllocationManager(
+					(MatrixProject)context.getProject(), 
+					new LabelAtom(allocatedLabel), 
+					instanceBootTimeoutLimit,
+					matrixId++);
+			jobsByRequestedLabels.put(allocatedLabel, value);
+		}
+		
+		return allocatedLabels;
+	}
+	
+	private BuildListener getListenerFor(final Job<?,?> project) {
+		return new BuildListenerImplementation(project);
+	}	
+	
+	private void cancelAllItemsInQueueMatchingLabel(Label label) 
+	{
 		Queue queue = Jenkins.getInstance().getQueue();
 		Item[] items = queue.getItems();
 		for (Item item : items) {
@@ -104,27 +137,8 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		}
 	}
 	
-
-	public BuildListener getListenerFor(final Job<?,?> project) {
-		return new BuildListenerImplementation(project);
-	}
-
-	public synchronized List<String> allocateSlavesLabels(MatrixBuildExecution context, String ec2Label, Integer numberOfSlaves, Integer instanceBootTimeoutLimit) {
-		removePreviousLabelsAllocatedToGivenProject(context.getProject());
-		addListenerToCleanupAllocationTableOnBuildCompletion(context);
-		
-		LinkedList<String> allocatedLabels = allocateLabels(ec2Label, numberOfSlaves);
-		
-		for (String allocatedLabel : allocatedLabels) {
-			JobAllocationManager value = new JobAllocationManager((MatrixProject)context.getProject(), new LabelAtom(allocatedLabel), instanceBootTimeoutLimit);
-			jobsByRequestedLabels.put(allocatedLabel, value);
-		}
-		
-		return allocatedLabels;
-	}
-
-	private LinkedList<String> allocateLabels(String ec2Label,
-			Integer numberOfSlaves) {
+	private LinkedList<String> allocateLabels(String ec2Label, Integer numberOfSlaves) 
+	{
 		Set<Label> labels = Jenkins.getInstance().getLabels();
 		LinkedList<String> allocatedLabels = new LinkedList<String>();
 		int lastAllocatedSlaveNumber = 0;
@@ -136,10 +150,12 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 				continue;
 			
 			final String[] prefixAndSlaveNumber = labelString.split(SLAVE_NUM_SEPARATOR);
-			if (prefixAndSlaveNumber.length == 1)
+			boolean hasNoSuffix = prefixAndSlaveNumber.length == 1;
+			if (hasNoSuffix)
 				continue;
 			
-			int slaveNumber = Integer.parseInt(prefixAndSlaveNumber[1]);
+			String suffix = prefixAndSlaveNumber[1];
+			int slaveNumber = Integer.parseInt(suffix);
 			if (slaveNumber > lastAllocatedSlaveNumber)
 				lastAllocatedSlaveNumber = slaveNumber;
 			

@@ -1,6 +1,7 @@
 package hudson.plugins.ec2;
 
 import hudson.model.TaskListener;
+import hudson.slaves.EnvironmentVariablesNodeProperty;
 
 import java.io.IOException;
 
@@ -9,7 +10,9 @@ import com.amazonaws.AmazonClientException;
 
 public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 
- 	private transient String instanceLabel;
+ 	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "SLAVE_MATRIX_ID";
+	private transient String instanceLabel;
+	private transient int matrixId;
 
 	public Ec2AxisSlaveTemplate(SlaveTemplate toDecorate) {
 		super(
@@ -41,10 +44,16 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		instanceLabel = label;
 	}
 	
+	public void setMatrixId(int id) {
+		this.matrixId = id;
+	}
+	
 	@Override
 	public EC2Slave provision(TaskListener listener) throws AmazonClientException, IOException {
 		EC2Slave provisionedSlave = super.provision(listener);
 		provisionedSlave.setLabelString(instanceLabel);
+		EnvironmentVariablesNodeProperty v = provisionedSlave.getNodeProperties().get(EnvironmentVariablesNodeProperty.class);
+		v.getEnvVars().put(SLAVE_MATRIX_ENV_VAR_NAME, ""+matrixId);
 		return provisionedSlave;
 	}
 }

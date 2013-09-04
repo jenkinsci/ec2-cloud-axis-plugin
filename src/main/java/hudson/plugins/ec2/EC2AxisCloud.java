@@ -61,7 +61,8 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
     	template.setInstanceLabel(displayName);
     	
     	JobAllocationManager jobAllocationManager = jobsByRequestedLabels.get(displayName);
-    	template.setMatrixId(jobAllocationManager.getMatrixId());
+    	if (jobAllocationManager != null)
+    		template.setMatrixId(jobAllocationManager.getMatrixId());
     	
 		return template;
 	}
@@ -108,7 +109,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		
 		LinkedList<String> allocatedLabels = allocateLabels(ec2Label, numberOfSlaves);
 		
-		int matrixId = 0;
+		int matrixId = 1;
 		for (String allocatedLabel : allocatedLabels) {
 			JobAllocationManager value = new JobAllocationManager(
 					(MatrixProject)context.getProject(), 

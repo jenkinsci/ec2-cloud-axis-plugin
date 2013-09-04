@@ -1,5 +1,6 @@
 package hudson.plugins.ec2;
 
+import hudson.EnvVars;
 import hudson.model.TaskListener;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 
@@ -52,8 +53,18 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 	public EC2Slave provision(TaskListener listener) throws AmazonClientException, IOException {
 		EC2Slave provisionedSlave = super.provision(listener);
 		provisionedSlave.setLabelString(instanceLabel);
-		EnvironmentVariablesNodeProperty v = provisionedSlave.getNodeProperties().get(EnvironmentVariablesNodeProperty.class);
-		v.getEnvVars().put(SLAVE_MATRIX_ENV_VAR_NAME, ""+matrixId);
+		EnvVars envVars = getSlaveEnvVars(provisionedSlave);
+		envVars.put(SLAVE_MATRIX_ENV_VAR_NAME, ""+matrixId);
 		return provisionedSlave;
+	}
+
+	private EnvVars getSlaveEnvVars(EC2Slave provisionedSlave)
+			throws IOException {
+		EnvironmentVariablesNodeProperty v = provisionedSlave.getNodeProperties().get(EnvironmentVariablesNodeProperty.class);
+		if (v == null) {
+			v = new EnvironmentVariablesNodeProperty();
+			provisionedSlave.getNodeProperties().add(v);
+		}
+		return v.getEnvVars();
 	}
 }

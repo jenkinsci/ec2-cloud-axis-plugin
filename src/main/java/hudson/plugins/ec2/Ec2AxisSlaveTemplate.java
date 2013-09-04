@@ -11,7 +11,7 @@ import com.amazonaws.AmazonClientException;
 
 public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 
- 	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "SLAVE_MATRIX_ID";
+ 	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "MATRIX_EXEC_ID";
 	private transient String instanceLabel;
 	private transient int matrixId;
 

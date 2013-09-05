@@ -112,7 +112,8 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		int matrixId = 1;
 		for (String allocatedLabel : allocatedLabels) {
 			JobAllocationManager value = new JobAllocationManager(
-					(MatrixProject)context.getProject(), 
+					(MatrixProject)context.getProject(),
+					context.getListener().getLogger(),
 					new LabelAtom(allocatedLabel), 
 					instanceBootTimeoutLimit,
 					matrixId++);

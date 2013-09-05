@@ -11,9 +11,6 @@ import hudson.model.BuildListener;
 
 @SuppressWarnings("serial")
 public abstract class BuildStartEndListener implements BuildListener {
-	
-	
-	
 	private static PrintStream nullOutputStream = new PrintStream(new NullOutputStream());
 	private static PrintWriter nullPrintWriter = new PrintWriter(nullOutputStream);
 	public void hyperlink(String url, String text) throws IOException { }

@@ -1,5 +1,7 @@
 package hudson.plugins.ec2;
 
+import java.io.PrintStream;
+
 import hudson.matrix.MatrixProject;
 import hudson.model.Job;
 import hudson.model.Label;
@@ -15,13 +17,21 @@ public class JobAllocationManager {
 	private Label buildLabel;
 	private final long startedTime;
 	private final int matrixId;
+	private PrintStream buildLogger;
 	
-	public JobAllocationManager(MatrixProject matrixProject, Label buildLabel, Integer instanceBootTimeoutLimit, int matrixId) {
+	public JobAllocationManager(
+			MatrixProject matrixProject, 
+			PrintStream buildLogger, 
+			Label buildLabel, 
+			Integer instanceBootTimeoutLimit, 
+			int matrixId) 
+	{
 		this.job = matrixProject;
+		this.buildLogger = buildLogger;
 		this.buildLabel = buildLabel;
 		this.instanceBootTimeoutLimit = instanceBootTimeoutLimit;
 		this.matrixId = matrixId;
-		startedTime = System.currentTimeMillis();		
+		startedTime = System.currentTimeMillis();	
 	}
 	
 	public void setAllocated() {
@@ -43,10 +53,17 @@ public class JobAllocationManager {
 		if (elapsedTime < instanceBootTimeoutLimit)
 			return;
 		
+		buildLogger.println("Build " +
+				buildLabel.getDisplayName() + 
+				" didn't come up after " + elapsedTime + " ms");
+		
 		cancelAllItemsForGivenLabel();
 	}
 
 	private void cancelAllItemsForGivenLabel() {
+		buildLogger.println("Will cancel construction with label " +
+				buildLabel.getDisplayName());
+		
 		Queue queue = Jenkins.getInstance().getQueue();
 		Item[] items = queue.getItems();
 		for (Item item : items) {

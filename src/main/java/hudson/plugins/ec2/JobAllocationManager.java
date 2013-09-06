@@ -1,6 +1,8 @@
 package hudson.plugins.ec2;
 
 import java.io.PrintStream;
+import java.util.Collection;
+import java.util.concurrent.ExecutionException;
 
 import hudson.matrix.MatrixProject;
 import hudson.model.Job;
@@ -8,6 +10,7 @@ import hudson.model.Label;
 import hudson.model.Queue;
 import hudson.model.Queue.Item;
 import hudson.model.Queue.Task;
+import hudson.slaves.NodeProvisioner.PlannedNode;
 import jenkins.model.Jenkins;
 
 public class JobAllocationManager {
@@ -18,6 +21,7 @@ public class JobAllocationManager {
 	private final long startedTime;
 	private final int matrixId;
 	private PrintStream buildLogger;
+	private Collection<PlannedNode> plannedNodes;
 	
 	public JobAllocationManager(
 			MatrixProject matrixProject, 
@@ -46,23 +50,62 @@ public class JobAllocationManager {
 		return matrixId;
 	}
 
-	public void abortBuildIfBootTimedOut() {
-		long currentTimeMillis = System.currentTimeMillis();
-		long elapsedTime = currentTimeMillis - startedTime;
-		
-		if (elapsedTime < instanceBootTimeoutLimit)
+	public void handleAllocationReattempt() {
+		if (launchErrorsOccurred()) {
+			cancelAllItemsForGivenLabel("Launch errors.");
 			return;
+		}
 		
-		buildLogger.println("Build " +
-				buildLabel.getDisplayName() + 
-				" didn't come up after " + elapsedTime + " ms");
-		
-		cancelAllItemsForGivenLabel();
+		if (isBuildExpired()) {
+			cancelAllItemsForGivenLabel("The slaves didn't come up after " + getStartupElapsedTime() + " ms.");
+		}
 	}
 
-	private void cancelAllItemsForGivenLabel() {
+	private boolean isBuildExpired() {
+		return getStartupElapsedTime() >= instanceBootTimeoutLimit;
+	}
+
+	private long getStartupElapsedTime() {
+		long currentTimeMillis = System.currentTimeMillis();
+		return currentTimeMillis - startedTime;
+	}
+
+	private boolean launchErrorsOccurred() {
+		boolean errorOccurred = false;
+		for (PlannedNode plannedNode : plannedNodes) {
+			if (plannedNode.future.isDone())
+				errorOccurred = isFailedProvision(plannedNode);
+		}
+		return errorOccurred;
+	}
+
+	private boolean isFailedProvision(PlannedNode plannedNode) {
+		final String displayName = buildLabel.getDisplayName();
+		try {
+			plannedNode.future.get();
+		} catch (InterruptedException e) {
+			buildLogger.println("Launch of slave for node " + displayName + " was interrupted");
+			e.printStackTrace(buildLogger);
+			return true;
+		} catch (ExecutionException e) {
+			buildLogger.println("An exception occurred while trying to provision node: " + displayName);
+			e.printStackTrace(buildLogger);
+			return true;
+		}
+		return false;
+	}
+
+	public void info(String message) {
+		buildLogger.println(message);
+	}
+
+	public void setPlannedNodes(Collection<PlannedNode> plannedNodes) {
+		this.plannedNodes = plannedNodes;
+	}
+
+	private void cancelAllItemsForGivenLabel(String reason) {
 		buildLogger.println("Will cancel construction with label " +
-				buildLabel.getDisplayName());
+				buildLabel.getDisplayName() + ". Reason: " + reason);
 		
 		Queue queue = Jenkins.getInstance().getQueue();
 		Item[] items = queue.getItems();

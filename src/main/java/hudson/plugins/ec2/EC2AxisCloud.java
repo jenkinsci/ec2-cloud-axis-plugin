@@ -82,20 +82,31 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		
 	@Override
 	public Collection<PlannedNode> provision(Label label, int excessWorkload) {
-		JobAllocationManager jobStatus = jobsByRequestedLabels.get(label.getDisplayName());
-		if (jobStatus == null) {
+		JobAllocationManager jobAllocator = jobsByRequestedLabels.get(label.getDisplayName());
+		if (jobAllocator == null) {
 			if (label.getDisplayName().matches(SLAVE_NUM_SEPARATOR+"[0-9]+$")) {
 				cancelAllItemsInQueueMatchingLabel(label);
 			}
 			return super.provision(label, excessWorkload);
 		}
 		
-		if (jobStatus.isAllocated()) {
-			jobStatus.abortBuildIfBootTimedOut();
+		return provisionForAllocatedJobs(label, excessWorkload, jobAllocator);
+	}
+
+	private Collection<PlannedNode> provisionForAllocatedJobs(Label label,
+			int excessWorkload, JobAllocationManager jobAllocator) {
+		if (jobAllocator.isAllocated()) {
+			jobAllocator.info(
+					"Provision requested for label '" + label.getName() + 
+					"', but a node was already provisioned. Should wait until node comes up.");
+			jobAllocator.handleAllocationReattempt();
 			return Arrays.asList();
 		}
-		jobStatus.setAllocated();
-		return super.provision(label, excessWorkload);
+		jobAllocator.setAllocated();
+		jobAllocator.info("Allocating slave for " + label.getName());
+		Collection<PlannedNode> plannedNodes = super.provision(label, excessWorkload);
+		jobAllocator.setPlannedNodes(plannedNodes);
+		return plannedNodes;
 	}
 
 	public synchronized List<String> allocateSlavesLabels(

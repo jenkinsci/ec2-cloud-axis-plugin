@@ -58,6 +58,10 @@ public class JobAllocationManager {
 		
 		if (isBuildExpired()) {
 			cancelAllItemsForGivenLabel("The slaves didn't come up after " + getStartupElapsedTime() + " ms.");
+			return;
+		}
+		for (PlannedNode plannedNode : plannedNodes) {
+			buildLogger.println("Label " + buildLabel.getDisplayName() + " has planned node " + plannedNode.displayName);
 		}
 	}
 

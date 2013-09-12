@@ -18,6 +18,7 @@ import hudson.model.labels.LabelAtom;
 import hudson.slaves.Cloud;
 import hudson.slaves.NodeProvisioner.PlannedNode;
 
+import java.io.PrintStream;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
@@ -61,8 +62,9 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
     	template.setInstanceLabel(displayName);
     	
     	JobAllocationManager jobAllocationManager = jobsByRequestedLabels.get(displayName);
-    	if (jobAllocationManager != null)
+    	if (jobAllocationManager != null) {
     		template.setMatrixId(jobAllocationManager.getMatrixId());
+    	}
     	
 		return template;
 	}
@@ -115,16 +117,18 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			Integer numberOfSlaves, 
 			Integer instanceBootTimeoutLimit)
 	{
+		final PrintStream logger = context.getListener().getLogger();
+		
 		removePreviousLabelsAllocatedToGivenProject(context.getProject());
 		addListenerToCleanupAllocationTableOnBuildCompletion(context);
 		
-		LinkedList<String> allocatedLabels = allocateLabels(ec2Label, numberOfSlaves);
+		LinkedList<String> allocatedLabels = allocateLabels(logger, ec2Label, numberOfSlaves);
 		
 		int matrixId = 1;
 		for (String allocatedLabel : allocatedLabels) {
 			JobAllocationManager value = new JobAllocationManager(
 					(MatrixProject)context.getProject(),
-					context.getListener().getLogger(),
+					logger,
 					new LabelAtom(allocatedLabel), 
 					instanceBootTimeoutLimit,
 					matrixId++);
@@ -150,17 +154,18 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		}
 	}
 	
-	private LinkedList<String> allocateLabels(String ec2Label, Integer numberOfSlaves) 
+	private LinkedList<String> allocateLabels(PrintStream logger, String ec2Label, Integer numberOfSlaves) 
 	{
 		Set<Label> labels = Jenkins.getInstance().getLabels();
 		LinkedList<String> allocatedLabels = new LinkedList<String>();
 		int lastAllocatedSlaveNumber = 0;
-		
+		logger.append("Start allocating idle labels for job");
 		LinkedList<String> idleLabels = new LinkedList<String>();
 		for (Label label : labels) {
 			String labelString = label.getDisplayName();
-			if (!labelString.startsWith(ec2Label))
+			if (!labelString.startsWith(ec2Label)) {
 				continue;
+			}
 			
 			final String[] prefixAndSlaveNumber = labelString.split(SLAVE_NUM_SEPARATOR);
 			boolean hasNoSuffix = prefixAndSlaveNumber.length == 1;
@@ -172,8 +177,11 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			if (slaveNumber > lastAllocatedSlaveNumber)
 				lastAllocatedSlaveNumber = slaveNumber;
 			
-			if (hasAvailableNode(label))
-				idleLabels.add(labelString);
+			if (!hasAvailableNode(logger, label)) {
+				logger.append(labelString + " not available.\n");
+				continue;
+			}
+			idleLabels.add(labelString);
 			
 			if (idleLabels.size() >= numberOfSlaves)
 				break;
@@ -184,7 +192,9 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		Integer slavesToComplete = numberOfSlaves - allocatedLabels.size();
 		for (int i = 0; i < slavesToComplete; i++) {
 			int slaveNumber = lastAllocatedSlaveNumber+i;
-			allocatedLabels.add(ec2Label + SLAVE_NUM_SEPARATOR + slaveNumber);
+			String newLabel = ec2Label + SLAVE_NUM_SEPARATOR + slaveNumber;
+			allocatedLabels.add(newLabel);
+			logger.append("New label " + newLabel + " will be created.\n");
 		}
 		return allocatedLabels;
 	}
@@ -226,19 +236,23 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		}
 	}
 
-	private boolean hasAvailableNode(Label label) {
-		if (jobsByRequestedLabels.containsKey(label.getName()))
+	private boolean hasAvailableNode(PrintStream logger, Label label) {
+		if (jobsByRequestedLabels.containsKey(label.getName())) {
+			logger.append(label.getDisplayName()+": Label is already allocated\n");
 			return false;
+		}
 		
 		Set<Node> nodes = label.getNodes();
-		return  isLabelAvailable(nodes);
+		return  isLabelAvailable(logger, label, nodes);
 	}
 
-	private boolean isLabelAvailable(Set<Node> nodes) {
+	private boolean isLabelAvailable(PrintStream logger, Label label, Set<Node> nodes) {
 		if (nodes.size() == 0)
 			return true;
-		
+		logger.append(label.getDisplayName()+": label has nodes\n");
 		for (Node node : nodes) {
+			String nodeName = node.getDisplayName();
+			logger.append("Checking node : " + nodeName + "+\n");
 			Computer c = node.toComputer();
 			if (c.isOffline() && !c.isConnecting()) {
 				return true;
@@ -248,6 +262,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			
 			if (hasAvailableExecutor(c))
 				return true;
+			logger.append(nodeName + " node not available." );
 		}
 		return false;
 	}

@@ -1,26 +1,21 @@
 package hudson.plugins.ec2;
 
+import hudson.EnvVars;
 import hudson.Extension;
 import hudson.matrix.MatrixBuild.MatrixBuildExecution;
-import hudson.matrix.MatrixProject;
-import hudson.model.BuildListener;
-import hudson.model.Result;
-import hudson.model.Cause;
 import hudson.model.Computer;
 import hudson.model.Executor;
-import hudson.model.Job;
+import hudson.model.Hudson;
 import hudson.model.Label;
 import hudson.model.Node;
-import hudson.model.Queue;
-import hudson.model.Queue.Item;
-import hudson.model.Queue.Task;
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.Cloud;
-import hudson.slaves.NodeProvisioner.PlannedNode;
+import hudson.slaves.EnvironmentVariablesNodeProperty;
+import hudson.util.StreamTaskListener;
 
+import java.io.IOException;
 import java.io.PrintStream;
-import java.util.Arrays;
-import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -28,16 +23,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.Future;
 
 import jenkins.model.Jenkins;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 public class EC2AxisCloud extends AmazonEC2Cloud {
-
+	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "MATRIX_EXEC_ID";
 	private static final String SLAVE_NUM_SEPARATOR = "__";
-	private static final Map<String, JobAllocationManager> jobsByRequestedLabels = new HashMap<String, JobAllocationManager>();
 
 	@DataBoundConstructor
 	public EC2AxisCloud(String accessId, String secretKey, String region, String privateKey, String instanceCapStr, List<SlaveTemplate> templates) {
@@ -49,7 +46,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 	
 	@Override
-	public SlaveTemplate getTemplate(Label label) {
+	public Ec2AxisSlaveTemplate getTemplate(Label label) {
 		String displayName = label.getDisplayName();
 		if (displayName == null)
 			return null;
@@ -59,12 +56,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
     	Ec2AxisSlaveTemplate template = (Ec2AxisSlaveTemplate)super.getTemplate(prefixAtom);
     	if (template == null)
     		return null;
-    	template.setInstanceLabel(displayName);
-    	
-    	JobAllocationManager jobAllocationManager = jobsByRequestedLabels.get(displayName);
-    	if (jobAllocationManager != null) {
-    		template.setMatrixId(jobAllocationManager.getMatrixId());
-    	}
     	
 		return template;
 	}
@@ -82,35 +73,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return cloudToUse;
 	}
 		
-	@Override
-	public Collection<PlannedNode> provision(Label label, int excessWorkload) {
-		JobAllocationManager jobAllocator = jobsByRequestedLabels.get(label.getDisplayName());
-		if (jobAllocator == null) {
-			if (label.getDisplayName().matches(SLAVE_NUM_SEPARATOR+"[0-9]+$")) {
-				cancelAllItemsInQueueMatchingLabel(label);
-			}
-			return super.provision(label, excessWorkload);
-		}
-		
-		return provisionForAllocatedJobs(label, excessWorkload, jobAllocator);
-	}
-
-	private Collection<PlannedNode> provisionForAllocatedJobs(Label label,
-			int excessWorkload, JobAllocationManager jobAllocator) {
-		if (jobAllocator.isAllocated()) {
-			jobAllocator.info(
-					"Provision requested for label '" + label.getName() + 
-					"', but a node was already provisioned. Should wait until node comes up.");
-			jobAllocator.handleAllocationReattempt();
-			return Arrays.asList();
-		}
-		jobAllocator.setAllocated();
-		jobAllocator.info("Allocating slave for " + label.getName());
-		Collection<PlannedNode> plannedNodes = super.provision(label, excessWorkload);
-		jobAllocator.setPlannedNodes(plannedNodes);
-		return plannedNodes;
-	}
-
+	@SuppressWarnings("rawtypes")
 	public synchronized List<String> allocateSlavesLabels(
 			MatrixBuildExecution context, 
 			String ec2Label, 
@@ -118,50 +81,60 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			Integer instanceBootTimeoutLimit)
 	{
 		final PrintStream logger = context.getListener().getLogger();
-		
-		removePreviousLabelsAllocatedToGivenProject(context.getProject());
-		addListenerToCleanupAllocationTableOnBuildCompletion(context);
-		
 		LinkedList<String> allocatedLabels = allocateLabels(logger, ec2Label, numberOfSlaves);
 		
-		int matrixId = 1;
-		for (String allocatedLabel : allocatedLabels) {
-			JobAllocationManager value = new JobAllocationManager(
-					(MatrixProject)context.getProject(),
-					logger,
-					new LabelAtom(allocatedLabel), 
-					instanceBootTimeoutLimit,
-					matrixId++);
-			jobsByRequestedLabels.put(allocatedLabel, value);
+		Label label = null;
+		Ec2AxisSlaveTemplate t = getTemplate(label);
+		try {
+			@SuppressWarnings("deprecation")
+			List<EC2Slave> allocatedSlaves = t.provisionMultipleSlaves(new StreamTaskListener(System.out), allocatedLabels);
+			Map<EC2Slave, Future> connectionByLabel = new HashMap<EC2Slave, Future>();
+			Iterator<String> labelIt = allocatedLabels.iterator();
+			int matrixIdSeq = 1;
+			for (EC2Slave ec2Slave : allocatedSlaves) {
+				Hudson.getInstance().addNode(ec2Slave);
+				ec2Slave.setLabelString(labelIt.next());
+				EnvVars slaveEnvVars = getSlaveEnvVars(ec2Slave);
+				slaveEnvVars.put(SLAVE_MATRIX_ENV_VAR_NAME, ""+matrixIdSeq++);
+				connectionByLabel.put(ec2Slave, ec2Slave.toComputer().connect(false));
+			}
+			for (Entry<EC2Slave, Future> future : connectionByLabel.entrySet()) {
+				try {
+					future.getValue().get();
+				}catch(Exception e) {
+					logger.println("Slave for label '"+future.getKey().getLabelString()+"' failed to connect.");
+					logger.println("Slave name is: " + future.getKey().getDisplayName());
+					logger.print(ExceptionUtils.getFullStackTrace(e));
+				}
+			}
+		} catch (Exception e) {
+			logger.print(ExceptionUtils.getFullStackTrace(e));
+			throw new RuntimeException(e);
 		}
 		
 		return allocatedLabels;
 	}
-	
-	private BuildListener getListenerFor(final Job<?,?> project) {
-		return new BuildListenerImplementation(project);
-	}	
-	
-	private void cancelAllItemsInQueueMatchingLabel(Label label) 
-	{
-		Queue queue = Jenkins.getInstance().getQueue();
-		Item[] items = queue.getItems();
-		for (Item item : items) {
-			Task task = item.task;
-			if (task.getAssignedLabel().getName().equals(label.getDisplayName())) {
-				queue.cancel(item);
-			}
+
+	private EnvVars getSlaveEnvVars(EC2Slave provisionedSlave)
+			throws IOException {
+		EnvironmentVariablesNodeProperty v = provisionedSlave.getNodeProperties().get(EnvironmentVariablesNodeProperty.class);
+		if (v == null) {
+			v = new EnvironmentVariablesNodeProperty();
+			provisionedSlave.getNodeProperties().add(v);
 		}
+		return v.getEnvVars();
 	}
 	
 	private LinkedList<String> allocateLabels(PrintStream logger, String ec2Label, Integer numberOfSlaves) 
 	{
-		Set<Label> labels = Jenkins.getInstance().getLabels();
 		LinkedList<String> allocatedLabels = new LinkedList<String>();
 		int lastAllocatedSlaveNumber = 0;
-		logger.append("Start allocating idle labels for job");
+		logger.println("Starting selection of labels with idle executors for job");
 		LinkedList<String> idleLabels = new LinkedList<String>();
-		for (Label label : labels) {
+		
+		TreeSet<Label> sortedLabels = getSortedLabels();
+		
+		for (Label label : sortedLabels) {
 			String labelString = label.getDisplayName();
 			if (!labelString.startsWith(ec2Label)) {
 				continue;
@@ -178,7 +151,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 				lastAllocatedSlaveNumber = slaveNumber;
 			
 			if (!hasAvailableNode(logger, label)) {
-				logger.append(labelString + " not available.\n");
+				logger.println(labelString + " not available.");
 				continue;
 			}
 			idleLabels.add(labelString);
@@ -189,22 +162,29 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		lastAllocatedSlaveNumber++;
 		
 		allocatedLabels.addAll(idleLabels);
+		
+		logger.println("Starting creation of new labels to assign");
 		Integer slavesToComplete = numberOfSlaves - allocatedLabels.size();
 		for (int i = 0; i < slavesToComplete; i++) {
 			int slaveNumber = lastAllocatedSlaveNumber+i;
 			String newLabel = ec2Label + SLAVE_NUM_SEPARATOR + slaveNumber;
 			allocatedLabels.add(newLabel);
-			logger.append("New label " + newLabel + " will be created.\n");
+			logger.println("New label " + newLabel + " will be created.");
 		}
 		return allocatedLabels;
 	}
 
-	private void addListenerToCleanupAllocationTableOnBuildCompletion( MatrixBuildExecution context) {
-		try {
-			context.post(getListenerFor(context.getProject()));
-		} catch (Exception e) {
-			throw new RuntimeException(e);
-		}
+	private TreeSet<Label> getSortedLabels() {
+		Set<Label> labels = Jenkins.getInstance().getLabels();
+		TreeSet<Label> sortedLabels = new TreeSet<Label>(new Comparator<Label>() {
+
+			@Override
+			public int compare(Label o1, Label o2) {
+				return o1.getDisplayName().compareTo(o2.getDisplayName());
+			}
+		});
+		sortedLabels.addAll(labels);
+		return sortedLabels;
 	}
 
 	private static List<SlaveTemplate> replaceByEC2AxisSlaveTemplates(List<SlaveTemplate> templates) {
@@ -227,21 +207,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 	
 
-	private void removePreviousLabelsAllocatedToGivenProject(Job<?, ?> requestingProject) {
-		Iterator<Entry<String, JobAllocationManager>> iterator = jobsByRequestedLabels.entrySet().iterator();
-		while(iterator.hasNext()) {
-			Entry<String, JobAllocationManager> entry = iterator.next();
-			if (entry.getValue().job.equals(requestingProject))
-				iterator.remove();
-		}
-	}
-
 	private boolean hasAvailableNode(PrintStream logger, Label label) {
-		if (jobsByRequestedLabels.containsKey(label.getName())) {
-			logger.append(label.getDisplayName()+": Label is already allocated\n");
-			return false;
-		}
-		
 		Set<Node> nodes = label.getNodes();
 		return  isLabelAvailable(logger, label, nodes);
 	}
@@ -288,19 +254,4 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	        return "EC2 Axis Amazon Cloud";
 	    }
 	}
-
-	@SuppressWarnings("serial")
-	private final class BuildListenerImplementation extends BuildStartEndListener {
-		private final Job<?, ?> project;
-		private BuildListenerImplementation(Job<?, ?> project) {
-			this.project = project;
-		}
-	
-		public void finished(Result result) {
-			removePreviousLabelsAllocatedToGivenProject(project);
-		}
-	
-		public void started(List<Cause> causes) {  }
-	}
-
 }

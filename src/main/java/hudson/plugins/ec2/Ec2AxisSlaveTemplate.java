@@ -72,14 +72,10 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 			 toDecorate.getInstanceCapStr());
 	}
 	
-	public List<EC2Slave> provisionMultipleSlaves(StreamTaskListener listener, 
-			List<String> slaveLabels) 
-	{
+	public List<EC2Slave> provisionMultipleSlaves(StreamTaskListener listener, List<String> slaveLabels) {
 		try {
 			return provisionOndemand(listener, slaveLabels);
-		} catch (AmazonClientException e) {
-			throw new RuntimeException(e);
-		} catch (IOException e) {
+		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
 	}
@@ -93,7 +89,6 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 
         logger.println("Launching " + ami + " for template " + description);
         KeyPair keyPair = getKeyPair(ec2);
-        RunInstancesRequest runInstanceRequest = createRunInstanceRequest(ec2, numberOfInstancesToCreate, keyPair);
         List<EC2Slave> allocatedSlaves = getSlavesForExistingStoppedInstances(logger, ec2, keyPair);
 
         int instancesRemainingToCreate = numberOfInstancesToCreate - allocatedSlaves.size();
@@ -107,19 +102,18 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
     		}
     	}
     	
-        // Have to create a new instance
+    	RunInstancesRequest runInstanceRequest = createRunInstanceRequest(ec2, instancesRemainingToCreate, keyPair);
         List<Instance> createdInstances = ec2.runInstances(runInstanceRequest).getReservation().getInstances();
+        logger.println("Sent instance creation request. Allocated instance count : " + createdInstances.size() );
         for (Instance inst : createdInstances) {
-        	/* Now that we have our instance, we can set tags on it */
         	if (inst_tags.size() > 0) {
         		updateRemoteTags(ec2, inst_tags, inst.getInstanceId());
-        		
-        		// That was a remote request - we should also update our local instance data.
         		inst.setTags(inst_tags);
         	}
-        	logger.println("No existing instance found - created: "+inst);
-        	// create slaves
+        	logger.println("Creating instance: "+inst);
+        	
         	EC2Slave newOndemandSlave = newOndemandSlave(inst);
+        	logger.println("Slave "+ newOndemandSlave.getDisplayName() +"created for instance "+inst);
         	allocatedSlaves.add(newOndemandSlave);
 		}
         return allocatedSlaves;
@@ -131,7 +125,7 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		
 		List<Filter> describeInstanceFilters = new ArrayList<Filter>();
 		describeInstanceFilters.add(new Filter("image-id").withValues(ami));
-		if (StringUtils.isNotBlank(getZone())) {
+		if (StringUtils.isNotBlank(zone)) {
 		    describeInstanceFilters.add(new Filter("availability-zone").withValues(getZone()));
 		}
 
@@ -168,21 +162,6 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		logger.println("Looking for existing instances: "+diRequest);
 
 		DescribeInstancesResult diResult = ec2.describeInstances(diRequest);
-
-
-//            if (StringUtils.isNotBlank(getIamInstanceProfile())) {
-//                riRequest.setIamInstanceProfile(new IamInstanceProfileSpecification().withArn(getIamInstanceProfile()));
-//                // cannot filter on IAM Instance Profile, so search in result
-//                reservationLoop:
-//                for (Reservation reservation : diResult.getReservations()) {
-//                    for (Instance instance : reservation.getInstances()) {
-//                        if (instance.getIamInstanceProfile() != null && instance.getIamInstanceProfile().getArn().equals(getIamInstanceProfile())) {
-//                            existingInstance = instance;
-//                            break reservationLoop;
-//                        }
-//                    }
-//                }
-//            } else 
 		if (diResult.getReservations().size() == 0) 
 			return slavesForExistingStoppedInstances;
 		List<Instance> instances = diResult.getReservations().get(0).getInstances();
@@ -247,7 +226,7 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 			int numberOfInstancesToCreate, KeyPair keyPair) {
 		RunInstancesRequest runInstanceRequest = new RunInstancesRequest(ami, numberOfInstancesToCreate, numberOfInstancesToCreate);
 		setupDeviceMapping(runInstanceRequest);
-		if (StringUtils.isNotBlank(getZone())) {
+		if (StringUtils.isNotBlank(zone)) {
 			Placement placement = new Placement(getZone());
 			runInstanceRequest.setPlacement(placement);
 		}
@@ -307,7 +286,9 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
     }
 
 	private KeyPair getKeyPair(AmazonEC2 ec2) throws IOException, AmazonClientException{
-    	KeyPair keyPair = parent.getPrivateKey().find(ec2);
+    	EC2AxisCloud ec2AxisCloud = (EC2AxisCloud)getParent();
+    	KeyPair keyPair = ec2AxisCloud.getKeyPair(ec2);
+    	
     	if(keyPair==null) {
         	throw new AmazonClientException("No matching keypair found on EC2. Is the EC2 private key a valid one?");
     	}

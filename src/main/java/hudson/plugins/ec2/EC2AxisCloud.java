@@ -55,7 +55,16 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	
 	@Override
 	public Ec2AxisSlaveTemplate getTemplate(Label label) {
-    	return (Ec2AxisSlaveTemplate)super.getTemplate(label);
+		String displayName = label.getDisplayName();
+		if (displayName == null)
+			return null;
+		
+    	String labelPrefix = StringUtils.substringBefore(displayName,SLAVE_NUM_SEPARATOR);
+		LabelAtom prefixAtom = new LabelAtom(labelPrefix);
+    	Ec2AxisSlaveTemplate template = (Ec2AxisSlaveTemplate)super.getTemplate(prefixAtom);
+    	if (template == null)
+    		return null;
+		return template;		
 	}
 
 	public static EC2AxisCloud getCloudToUse(String ec2label) {

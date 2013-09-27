@@ -64,6 +64,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
     	Ec2AxisSlaveTemplate template = (Ec2AxisSlaveTemplate)super.getTemplate(prefixAtom);
     	if (template == null)
     		return null;
+    	template.setInstanceLabel(displayName);
 		return template;		
 	}
 
@@ -169,7 +170,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		logger.println("Will provision instances for requested labels: " + StringUtils.join(allocatedLabels,","));
 		Ec2AxisSlaveTemplate t = getTemplate(new LabelAtom(ec2Label));
 		@SuppressWarnings("deprecation")
-		List<EC2Slave> allocatedSlaves = t.provisionMultipleSlaves(new StreamTaskListener(System.out), allocatedLabels);
+		List<EC2Slave> allocatedSlaves = t.provisionMultipleSlaves(new StreamTaskListener(System.out), allocatedLabels.size());
 		Iterator<String> labelIt = allocatedLabels.iterator();
 		int matrixIdSeq = nextMatrixId;
 		Map<EC2Slave, Future> connectionByLabel = new HashMap<EC2Slave, Future>();
@@ -292,16 +293,14 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		logger.append(label.getDisplayName()+": label has nodes\n");
 		for (Node node : nodes) {
 			String nodeName = node.getDisplayName();
-			logger.append("Checking node : " + nodeName + "+\n");
+			logger.println("Checking node : " + nodeName);
 			Computer c = node.toComputer();
-			if (c.isOffline() && !c.isConnecting()) {
+			if (c.isOffline() || c.isConnecting()) {
 				continue;
 			}
-			if (isNodeOnlineAndAvailable(c))
+			if (isNodeOnlineAndAvailable(c) && hasAvailableExecutor(c))
 				return true;
 			
-			if (hasAvailableExecutor(c))
-				return true;
 			logger.append(nodeName + " node not available." );
 		}
 		return false;

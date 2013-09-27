@@ -9,6 +9,7 @@ import hudson.matrix.AxisDescriptor;
 import hudson.matrix.LabelAxis;
 import hudson.matrix.MatrixBuild;
 import hudson.matrix.MatrixProject;
+import hudson.model.Action;
 import hudson.model.AutoCompletionCandidates;
 import hudson.model.Messages;
 import hudson.model.Label;
@@ -61,7 +62,12 @@ public class EC2Axis extends LabelAxis {
 	@Override
 	public List<String> rebuild(MatrixBuild.MatrixBuildExecution context) {
 		EC2AxisCloud cloudToUse = EC2AxisCloud.getCloudToUse(ec2label);
-		return cloudToUse.allocateSlavesLabels(context, ec2label, numberOfSlaves, instanceBootTimeoutLimit);
+		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(context, ec2label, numberOfSlaves, instanceBootTimeoutLimit);
+		Ec2AxisDescriptionAction e = new Ec2AxisDescriptionAction(
+				ec2label,
+				numberOfSlaves);
+		context.getBuild().getActions().add(e);
+		return allocateSlavesLabels;
 	}
 
 	@Override

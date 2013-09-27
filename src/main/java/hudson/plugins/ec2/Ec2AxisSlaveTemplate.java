@@ -31,6 +31,7 @@ import com.amazonaws.services.ec2.model.DescribeSecurityGroupsRequest;
 import com.amazonaws.services.ec2.model.DescribeSecurityGroupsResult;
 import com.amazonaws.services.ec2.model.DescribeSubnetsRequest;
 import com.amazonaws.services.ec2.model.DescribeSubnetsResult;
+import com.amazonaws.services.ec2.model.EbsBlockDevice;
 import com.amazonaws.services.ec2.model.Filter;
 import com.amazonaws.services.ec2.model.Image;
 import com.amazonaws.services.ec2.model.Instance;
@@ -43,9 +44,12 @@ import com.amazonaws.services.ec2.model.StartInstancesRequest;
 import com.amazonaws.services.ec2.model.StartInstancesResult;
 import com.amazonaws.services.ec2.model.Subnet;
 import com.amazonaws.services.ec2.model.Tag;
+import com.amazonaws.services.ec2.model.VolumeType;
 
 
 public class Ec2AxisSlaveTemplate extends SlaveTemplate {
+
+	private transient String instanceLabel;
 
 	public Ec2AxisSlaveTemplate(SlaveTemplate toDecorate) {
 		super(
@@ -72,20 +76,18 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 			 toDecorate.getInstanceCapStr());
 	}
 	
-	public List<EC2Slave> provisionMultipleSlaves(StreamTaskListener listener, List<String> slaveLabels) {
+	public List<EC2Slave> provisionMultipleSlaves(StreamTaskListener listener, int numberOfInstancesToCreate) {
 		try {
-			return provisionOndemand(listener, slaveLabels);
+			return provisionOndemand(listener, numberOfInstancesToCreate);
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	private List<EC2Slave> provisionOndemand(TaskListener listener, List<String> slaveLabels) 
+	private List<EC2Slave> provisionOndemand(TaskListener listener, int numberOfInstancesToCreate) 
 			throws AmazonClientException, IOException {
         PrintStream logger = listener.getLogger();
         AmazonEC2 ec2 = getParent().connect();
-        
-        int numberOfInstancesToCreate = slaveLabels.size();
 
         logger.println("Launching " + ami + " for template " + description);
         KeyPair keyPair = getKeyPair(ec2);
@@ -250,6 +252,16 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		runInstanceRequest.setUserData(userDataString);
 		runInstanceRequest.setKeyName(keyPair.getKeyName());
 		runInstanceRequest.setInstanceType(type.toString());
+		
+		BlockDeviceMapping b = new BlockDeviceMapping();
+		EbsBlockDevice ebs = new EbsBlockDevice();
+		b.setDeviceName("/dev/sda1");
+		ebs.setVolumeType(VolumeType.Io1);
+		ebs.setIops(4000);
+		b.setEbs(ebs);
+		
+		runInstanceRequest.withBlockDeviceMappings(b);
+		
 		return runInstanceRequest;
 	}
 	
@@ -356,6 +368,15 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
         throw new AmazonClientException("Unable to get AMI device mapping for " + ami);
     }
 
-    
-	
+	public void setInstanceLabel(String displayName) {
+		this.instanceLabel = displayName;
+	}
+
+	@Override
+	public EC2Slave provision(TaskListener listener) throws AmazonClientException, IOException {
+		EC2Slave provisionedSlave = super.provision(listener);
+		if (instanceLabel != null)
+			provisionedSlave.setLabelString(instanceLabel);
+		return provisionedSlave;
+	}
 }

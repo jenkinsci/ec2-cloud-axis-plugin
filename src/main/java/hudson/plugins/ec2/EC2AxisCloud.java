@@ -15,6 +15,7 @@ import hudson.util.StreamTaskListener;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.charset.Charset;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -39,6 +40,7 @@ import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.KeyPair;
 
 public class EC2AxisCloud extends AmazonEC2Cloud {
+	private static final String END_LABEL_SEPARATOR = "$";
 	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "MATRIX_EXEC_ID";
 	private static final String SLAVE_NUM_SEPARATOR = "__";
 	private final EC2AxisPrivateKey ec2PrivateKey;
@@ -84,7 +86,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	final static ReentrantLock  labelAllocationLock = new ReentrantLock();
 	
 	public List<String> allocateSlavesLabels(
-			MatrixBuildExecution context, 
+			MatrixBuildExecution buildContext, 
 			String ec2Label, 
 			Integer numberOfSlaves, 
 			Integer instanceBootTimeoutLimit) 
@@ -92,7 +94,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		try {
 			labelAllocationLock.lockInterruptibly();
 			
-			final PrintStream logger = context.getListener().getLogger();
+			final PrintStream logger = buildContext.getListener().getLogger();
 			LinkedList<String> onlineAndAvailableLabels = allocateOnlineSlaves(logger, ec2Label, numberOfSlaves);
 			int countOfRemainingLabelsToCreate = numberOfSlaves - onlineAndAvailableLabels.size();
 			LinkedList<String> allLabels = new LinkedList<String>();
@@ -101,10 +103,10 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			if (countOfRemainingLabelsToCreate > 0) {
 				int nextMatrixId = onlineAndAvailableLabels.size()+1;
 				LinkedList<String> newLabels = createNewSlaveAndWaitUntilAllAreConnected(
+						buildContext,
 						ec2Label, 
 						countOfRemainingLabelsToCreate, 
-						nextMatrixId, 
-						logger);
+						nextMatrixId);
 				allLabels.addAll(newLabels);
 			}
 			
@@ -118,46 +120,57 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 
 	@SuppressWarnings("rawtypes")
 	private LinkedList<String> createNewSlaveAndWaitUntilAllAreConnected(
+			MatrixBuildExecution buildContext, 
 			String ec2Label, 
 			int remainingLabelsToCreate,
-			int nextMatrixId,  
-			final PrintStream logger) 
+			int nextMatrixId) 
 	{
+		PrintStream logger = buildContext.getListener().getLogger();
 		LinkedList<String> newLabels = allocateNewLabels(ec2Label, remainingLabelsToCreate, logger);
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
+		
 		try {
 			Map<EC2Slave, Future> connectionByLabel = allocateSlavesAndLaunchThem(ec2Label, logger, newLabels, nextMatrixId);
-			waitUntilSlavesAreReady(logger, connectionByLabel);
+			monitorSlavesToReportConnectionErrors(buildContext, connectionByLabel);
 			stopWatch.stop();
-			logger.println("All slaves are up and running. It took " + stopWatch.getTime() + "ms to start all instances.");
+			logger.println("The following slaves are up and running. It took " + stopWatch.getTime() + "ms to start all instances.");
+			return newLabels;
 		} catch (Exception e) {
 			logger.print(ExceptionUtils.getFullStackTrace(e));
 			throw new RuntimeException(e);
 		}
-		return newLabels;
 	}
 
 	@SuppressWarnings("rawtypes")
-	private void waitUntilSlavesAreReady(final PrintStream logger, Map<EC2Slave, Future> connectionByLabel) 
+	private void monitorSlavesToReportConnectionErrors(final MatrixBuildExecution buildContext, final Map<EC2Slave, Future> connectionByLabel) 
 	{
-		for (Entry<EC2Slave, Future> future : connectionByLabel.entrySet()) {
-			EC2Slave ec2Slave = future.getKey();
-			logger.println(
-					String.format("Waiting %s (label %s) to come up",
-					ec2Slave.getDisplayName(),ec2Slave.getLabelString()));
+		final Runnable slaveMonitor = new Runnable() {
 			
-			try {
-				future.getValue().get();
-				logger.println(String.format("Slave %s (label %s) is online", 
-						ec2Slave.getDisplayName(),
-						ec2Slave.getLabelString()));
-			}catch(Exception e) {
-				logger.println("Slave for label '"+ec2Slave.getLabelString()+"' failed to connect.");
-				logger.println("Slave name is: " + ec2Slave.getDisplayName());
-				logger.print(ExceptionUtils.getFullStackTrace(e));
+			@Override
+			public void run() {
+				for (Entry<EC2Slave, Future> future : connectionByLabel.entrySet()) {
+					EC2Slave ec2Slave = future.getKey();
+					PrintStream logger = buildContext.getListener().getLogger();
+					logger.println(
+							String.format("Waiting %s (label %s) to come up",
+							ec2Slave.getDisplayName(),ec2Slave.getLabelString()));
+					
+					try {
+						future.getValue().get();
+						logger.println(String.format("Slave %s (label %s) is online", 
+								ec2Slave.getDisplayName(),
+								ec2Slave.getLabelString()));
+					}catch(Exception e) {
+						logger.println("Slave for label '"+ec2Slave.getLabelString()+"' failed to connect.");
+						logger.println("Slave name is: " + ec2Slave.getDisplayName());
+						logger.print(ExceptionUtils.getFullStackTrace(e));
+					}
+				}
 			}
-		}
+		};
+		final Thread threadToWaitAndReportSlaveErrors = new Thread(slaveMonitor, "Waiting slaves to come up");
+		threadToWaitAndReportSlaveErrors.start();
 	}
 
 	@SuppressWarnings("rawtypes")
@@ -169,8 +182,8 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	{
 		logger.println("Will provision instances for requested labels: " + StringUtils.join(allocatedLabels,","));
 		Ec2AxisSlaveTemplate t = getTemplate(new LabelAtom(ec2Label));
-		@SuppressWarnings("deprecation")
-		List<EC2Slave> allocatedSlaves = t.provisionMultipleSlaves(new StreamTaskListener(System.out), allocatedLabels.size());
+		StreamTaskListener taskListener = new StreamTaskListener(logger,Charset.forName("UTF-8"));
+		List<EC2Slave> allocatedSlaves = t.provisionMultipleSlaves(taskListener, allocatedLabels.size());
 		Iterator<String> labelIt = allocatedLabels.iterator();
 		int matrixIdSeq = nextMatrixId;
 		Map<EC2Slave, Future> connectionByLabel = new HashMap<EC2Slave, Future>();
@@ -203,7 +216,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		for (int i = 0; i < slavesToComplete; i++) {
 			// TODO: make a method to return the next "available" label number
 			int slaveNumber = currentLabelNumber++;
-			String newLabel = ec2Label + SLAVE_NUM_SEPARATOR + slaveNumber;
+			String newLabel = ec2Label + END_LABEL_SEPARATOR + slaveNumber;
 			allocatedLabels.add(newLabel);
 			logger.println("New label " + newLabel + " will be created.");
 		}
@@ -225,7 +238,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 				continue;
 			}
 			
-			final String[] prefixAndSlaveNumber = labelString.split(SLAVE_NUM_SEPARATOR);
+			final String[] prefixAndSlaveNumber = labelString.split(END_LABEL_SEPARATOR);
 			boolean hasNoSuffix = prefixAndSlaveNumber.length == 1;
 			if (hasNoSuffix)
 				continue;

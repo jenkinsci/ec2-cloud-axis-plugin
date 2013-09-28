@@ -31,7 +31,6 @@ import com.amazonaws.services.ec2.model.DescribeSecurityGroupsRequest;
 import com.amazonaws.services.ec2.model.DescribeSecurityGroupsResult;
 import com.amazonaws.services.ec2.model.DescribeSubnetsRequest;
 import com.amazonaws.services.ec2.model.DescribeSubnetsResult;
-import com.amazonaws.services.ec2.model.EbsBlockDevice;
 import com.amazonaws.services.ec2.model.Filter;
 import com.amazonaws.services.ec2.model.Image;
 import com.amazonaws.services.ec2.model.Instance;
@@ -44,7 +43,6 @@ import com.amazonaws.services.ec2.model.StartInstancesRequest;
 import com.amazonaws.services.ec2.model.StartInstancesResult;
 import com.amazonaws.services.ec2.model.Subnet;
 import com.amazonaws.services.ec2.model.Tag;
-import com.amazonaws.services.ec2.model.VolumeType;
 
 
 public class Ec2AxisSlaveTemplate extends SlaveTemplate {
@@ -224,8 +222,8 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		}
     }
 
-	private RunInstancesRequest createRunInstanceRequest(AmazonEC2 ec2,
-			int numberOfInstancesToCreate, KeyPair keyPair) {
+	private RunInstancesRequest createRunInstanceRequest(AmazonEC2 ec2, int numberOfInstancesToCreate, KeyPair keyPair) 
+	{
 		RunInstancesRequest runInstanceRequest = new RunInstancesRequest(ami, numberOfInstancesToCreate, numberOfInstancesToCreate);
 		setupDeviceMapping(runInstanceRequest);
 		if (StringUtils.isNotBlank(zone)) {
@@ -252,15 +250,6 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		runInstanceRequest.setUserData(userDataString);
 		runInstanceRequest.setKeyName(keyPair.getKeyName());
 		runInstanceRequest.setInstanceType(type.toString());
-		
-		BlockDeviceMapping b = new BlockDeviceMapping();
-		EbsBlockDevice ebs = new EbsBlockDevice();
-		b.setDeviceName("/dev/sda1");
-		ebs.setVolumeType(VolumeType.Io1);
-		ebs.setIops(4000);
-		b.setEbs(ebs);
-		
-		runInstanceRequest.withBlockDeviceMappings(b);
 		
 		return runInstanceRequest;
 	}

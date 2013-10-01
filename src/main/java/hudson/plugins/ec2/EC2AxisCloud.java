@@ -40,7 +40,7 @@ import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.KeyPair;
 
 public class EC2AxisCloud extends AmazonEC2Cloud {
-	private static final String END_LABEL_SEPARATOR = "$";
+	private static final String END_LABEL_SEPARATOR = "-";
 	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "MATRIX_EXEC_ID";
 	private static final String SLAVE_NUM_SEPARATOR = "__";
 	private final EC2AxisPrivateKey ec2PrivateKey;
@@ -149,23 +149,61 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			
 			@Override
 			public void run() {
-				for (Entry<EC2Slave, Future> future : connectionByLabel.entrySet()) {
-					EC2Slave ec2Slave = future.getKey();
-					PrintStream logger = buildContext.getListener().getLogger();
-					logger.println(
-							String.format("Waiting %s (label %s) to come up",
-							ec2Slave.getDisplayName(),ec2Slave.getLabelString()));
-					
-					try {
-						future.getValue().get();
-						logger.println(String.format("Slave %s (label %s) is online", 
-								ec2Slave.getDisplayName(),
-								ec2Slave.getLabelString()));
-					}catch(Exception e) {
-						logger.println("Slave for label '"+ec2Slave.getLabelString()+"' failed to connect.");
-						logger.println("Slave name is: " + ec2Slave.getDisplayName());
-						logger.print(ExceptionUtils.getFullStackTrace(e));
+				final LinkedList<EC2Slave> nodesToRetry = new LinkedList<EC2Slave>();
+				for (Entry<EC2Slave, Future> resultBySlave : connectionByLabel.entrySet()) {
+					if (!waitForConnection(buildContext, resultBySlave, true)) {
+						nodesToRetry.add(resultBySlave.getKey());
 					}
+				}
+				if (nodesToRetry.size() == 0)
+					return;
+				
+				retryConnectionOnFailedLaunches(buildContext, nodesToRetry);
+			}
+
+			private void retryConnectionOnFailedLaunches(
+					final MatrixBuildExecution buildContext,
+					final LinkedList<EC2Slave> nodesToRetry) {
+				Map<EC2Slave, Future> reattempts = new HashMap<EC2Slave, Future>();
+				try {
+					PrintStream logger = buildContext.getListener().getLogger();
+					logger.println("Will retry connection on failed nodes in 5 secs");
+					Thread.sleep(5000);
+					
+					for (EC2Slave ec2Slave : nodesToRetry) {
+						logger.println("Retrying connection on slave name " + ec2Slave.getDisplayName());
+						reattempts.put(ec2Slave, ec2Slave.toComputer().connect(true));
+					}
+					
+				} catch (InterruptedException e) {
+					throw new RuntimeException(e);
+				}
+				for (Entry<EC2Slave, Future> futureRetry : reattempts.entrySet()) {
+					waitForConnection(buildContext, futureRetry, false);
+				}
+			}
+
+			private boolean waitForConnection(
+					final MatrixBuildExecution buildContext,
+					Entry<EC2Slave, Future> future,
+					boolean retry) {
+				EC2Slave ec2Slave = future.getKey();
+				PrintStream logger = buildContext.getListener().getLogger();
+				logger.println(
+						String.format("Waiting %s (label %s) to come up",
+						ec2Slave.getDisplayName(),ec2Slave.getLabelString()));
+				
+				try {
+					future.getValue().get();
+					logger.println(String.format("Slave %s (label %s) is online", 
+							ec2Slave.getDisplayName(),
+							ec2Slave.getLabelString()));
+					return true;
+				}catch(Exception e) {
+					logger.println("Slave for label '"+ec2Slave.getLabelString()+"' failed to connect.");
+					logger.println("Slave name is: " + ec2Slave.getDisplayName());
+					logger.print(ExceptionUtils.getFullStackTrace(e));
+					return false;
 				}
 			}
 		};
@@ -190,10 +228,13 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		for (EC2Slave ec2Slave : allocatedSlaves) {
 			logger.println("Setting up labels and environment variables for " + ec2Slave.getDisplayName());
 			Hudson.getInstance().addNode(ec2Slave);
-			ec2Slave.setLabelString(labelIt.next());
+			String slaveLabel = labelIt.next();
+			ec2Slave.setLabelString(slaveLabel);
 			EnvVars slaveEnvVars = getSlaveEnvVars(ec2Slave);
 			slaveEnvVars.put(SLAVE_MATRIX_ENV_VAR_NAME, ""+matrixIdSeq++);
-			connectionByLabel.put(ec2Slave, ec2Slave.toComputer().connect(false));
+			Computer computer = ec2Slave.toComputer();
+			Future<?> connectionFuture = computer.connect(false);
+			connectionByLabel.put(ec2Slave, connectionFuture);
 		}
 		return connectionByLabel;
 	}
@@ -216,7 +257,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		for (int i = 0; i < slavesToComplete; i++) {
 			// TODO: make a method to return the next "available" label number
 			int slaveNumber = currentLabelNumber++;
-			String newLabel = ec2Label + END_LABEL_SEPARATOR + slaveNumber;
+			String newLabel = ec2Label + END_LABEL_SEPARATOR + String.format("%03d", slaveNumber);
 			allocatedLabels.add(newLabel);
 			logger.println("New label " + newLabel + " will be created.");
 		}
@@ -232,19 +273,24 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		LinkedList<String> onlineAndAvailableLabels = new LinkedList<String>();
 		TreeSet<Label> sortedLabels = getSortedLabels();
 		int matrixId = 1;
+		logger.println("Will chech " + sortedLabels.size() +" labels");
 		for (Label label : sortedLabels) {
+			logger.println("Checking label " + label.getDisplayName());
 			String labelString = label.getDisplayName();
 			if (!labelString.startsWith(ec2Label)) {
+				logger.println("Ignoring " + labelString +" because it doesn't start with " + ec2Label);
 				continue;
 			}
 			
-			final String[] prefixAndSlaveNumber = labelString.split(END_LABEL_SEPARATOR);
+			final String[] prefixAndSlaveNumber = labelString.split("\\"+END_LABEL_SEPARATOR);
 			boolean hasNoSuffix = prefixAndSlaveNumber.length == 1;
-			if (hasNoSuffix)
+			if (hasNoSuffix) {
+				logger.println("Ignoring " + labelString +" because it has no suffix.");
 				continue;
+			}
 			
 			if (!hasAvailableNode(logger, label)) {
-				logger.println(labelString + " not available.");
+				logger.println(labelString + " has no available node.");
 				continue;
 			}
 			logger.println(labelString + " has online and available nodes.");
@@ -259,6 +305,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			if (onlineAndAvailableLabels.size() >= numberOfSlaves)
 				break;
 		}
+		logger.println("Online labels found : " + onlineAndAvailableLabels.size());
 		return onlineAndAvailableLabels;
 	}
 

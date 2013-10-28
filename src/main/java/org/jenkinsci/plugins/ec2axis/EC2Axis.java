@@ -9,7 +9,6 @@ import hudson.matrix.AxisDescriptor;
 import hudson.matrix.LabelAxis;
 import hudson.matrix.MatrixBuild;
 import hudson.matrix.MatrixProject;
-import hudson.model.Action;
 import hudson.model.AutoCompletionCandidates;
 import hudson.model.Messages;
 import hudson.model.Label;

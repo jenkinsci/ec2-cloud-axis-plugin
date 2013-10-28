@@ -4,7 +4,6 @@ import hudson.model.TaskListener;
 import hudson.model.Descriptor.FormException;
 import hudson.model.Hudson;
 import hudson.model.Node;
-import hudson.slaves.NodeProperty;
 import hudson.util.StreamTaskListener;
 
 import java.io.IOException;
@@ -12,11 +11,11 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang.StringUtils;
@@ -32,13 +31,20 @@ import com.amazonaws.services.ec2.model.DescribeSecurityGroupsResult;
 import com.amazonaws.services.ec2.model.DescribeSubnetsRequest;
 import com.amazonaws.services.ec2.model.DescribeSubnetsResult;
 import com.amazonaws.services.ec2.model.Filter;
+import com.amazonaws.services.ec2.model.GroupIdentifier;
 import com.amazonaws.services.ec2.model.Image;
 import com.amazonaws.services.ec2.model.Instance;
 import com.amazonaws.services.ec2.model.InstanceStateName;
 import com.amazonaws.services.ec2.model.KeyPair;
+import com.amazonaws.services.ec2.model.LaunchSpecification;
+import com.amazonaws.services.ec2.model.ModifyInstanceAttributeRequest;
 import com.amazonaws.services.ec2.model.Placement;
+import com.amazonaws.services.ec2.model.RequestSpotInstancesRequest;
+import com.amazonaws.services.ec2.model.RequestSpotInstancesResult;
 import com.amazonaws.services.ec2.model.RunInstancesRequest;
 import com.amazonaws.services.ec2.model.SecurityGroup;
+import com.amazonaws.services.ec2.model.SpotInstanceRequest;
+import com.amazonaws.services.ec2.model.SpotPlacement;
 import com.amazonaws.services.ec2.model.StartInstancesRequest;
 import com.amazonaws.services.ec2.model.StartInstancesResult;
 import com.amazonaws.services.ec2.model.Subnet;
@@ -53,6 +59,7 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		super(
 			 toDecorate.ami, 
 			 toDecorate.zone, 
+			 toDecorate.spotConfig,
 			 toDecorate.securityGroups, 
 			 toDecorate.remoteFS, 
 			 toDecorate.sshPort, 
@@ -71,26 +78,31 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 			 toDecorate.getTags(), 
 			 toDecorate.idleTerminationMinutes, 
 			 toDecorate.usePrivateDnsName, 
-			 toDecorate.getInstanceCapStr());
+			 toDecorate.getInstanceCapStr(),
+			 toDecorate.iamInstanceProfile,
+			 toDecorate.useEphemeralDevices,
+			 toDecorate.getLaunchTimeoutStr());
 	}
 	
-	public List<EC2Slave> provisionMultipleSlaves(StreamTaskListener listener, int numberOfInstancesToCreate) {
+	public List<EC2AbstractSlave> provisionMultipleSlaves(StreamTaskListener listener, int numberOfInstancesToCreate) {
 		try {
+			if (spotConfig != null)
+				return provisionMultipleSpot(listener, numberOfInstancesToCreate);
+			
 			return provisionOndemand(listener, numberOfInstancesToCreate);
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	private List<EC2Slave> provisionOndemand(TaskListener listener, int numberOfInstancesToCreate) 
+	private List<EC2AbstractSlave> provisionOndemand(TaskListener listener, int numberOfInstancesToCreate) 
 			throws AmazonClientException, IOException {
         PrintStream logger = listener.getLogger();
         AmazonEC2 ec2 = getParent().connect();
 
         logger.println("Launching " + ami + " for template " + description);
         KeyPair keyPair = getKeyPair(ec2);
-        List<EC2Slave> allocatedSlaves = getSlavesForExistingStoppedInstances(logger, ec2, keyPair);
-
+        List<EC2AbstractSlave> allocatedSlaves = (List<EC2AbstractSlave>) requestStoppedInstancesToAllocation(logger, ec2, keyPair);
         int instancesRemainingToCreate = numberOfInstancesToCreate - allocatedSlaves.size();
         if (instancesRemainingToCreate == 0)
         	return allocatedSlaves;
@@ -110,18 +122,18 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
         		updateRemoteTags(ec2, inst_tags, inst.getInstanceId());
         		inst.setTags(inst_tags);
         	}
-        	logger.println("Creating instance: "+inst);
+        	logger.println("Creating instance: "+inst.getInstanceId());
         	
-        	EC2Slave newOndemandSlave = newOndemandSlave(inst);
-        	logger.println("Slave "+ newOndemandSlave.getDisplayName() +"created for instance "+inst);
+        	EC2OndemandSlave newOndemandSlave = newOnDemandSlaveOrCry(inst);
+        	logger.println("Slave "+ newOndemandSlave.getDisplayName() +"created for instance "+inst.getInstanceId());
         	allocatedSlaves.add(newOndemandSlave);
 		}
         return allocatedSlaves;
     }
 
-	private List<EC2Slave> getSlavesForExistingStoppedInstances(
+	private List<EC2AbstractSlave> requestStoppedInstancesToAllocation(
 			PrintStream logger, AmazonEC2 ec2, KeyPair keyPair) {
-		List<EC2Slave> slavesForExistingStoppedInstances = new LinkedList<EC2Slave>();
+		List<EC2AbstractSlave> slavesForExistingStoppedInstances = new LinkedList<EC2AbstractSlave>();
 		
 		List<Filter> describeInstanceFilters = new ArrayList<Filter>();
 		describeInstanceFilters.add(new Filter("image-id").withValues(ami));
@@ -177,9 +189,9 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 
 			List<Node> nodes = Hudson.getInstance().getNodes();
 			for (int i = 0, len = nodes.size(); i < len; i++) {
-				if (!(nodes.get(i) instanceof EC2Slave))
+				if (!(nodes.get(i) instanceof EC2AbstractSlave))
 					continue;
-				EC2Slave ec2Node = (EC2Slave) nodes.get(i);
+				EC2AbstractSlave ec2Node = (EC2AbstractSlave) nodes.get(i);
 				if (ec2Node.getInstanceId().equals(existingInstance.getInstanceId())) {
 			        logger.println("Found existing corresponding: "+ec2Node);
 			        slavesForExistingStoppedInstances.add(ec2Node);
@@ -188,39 +200,24 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 			
 			// Existing slave not found 
 			logger.println("Creating new slave for existing instance: "+existingInstance);
-			slavesForExistingStoppedInstances.add(newOndemandSlave(existingInstance));
+			EC2OndemandSlave ondemandSlave = newOnDemandSlaveOrCry(existingInstance);
+			slavesForExistingStoppedInstances.add(ondemandSlave);
 		}
 		
 		return slavesForExistingStoppedInstances;
 	}
-	
-    private EC2Slave newOndemandSlave(Instance inst) {
-        try {
-			return new EC2Slave(
-					inst.getInstanceId(), 
-					description, 
-					remoteFS, 
-					getSshPort(), 
-					getNumExecutors(), 
-					mode,
-					labels,
-					initScript,
-					Collections.<NodeProperty<?>>emptyList(),
-					remoteAdmin, 
-					rootCommandPrefix, 
-					jvmopts, 
-					stopOnTerminate, 
-					idleTerminationMinutes, 
-					inst.getPublicDnsName(), 
-					inst.getPrivateDnsName(), 
-					EC2Tag.fromAmazonTags(inst.getTags()), 
-					usePrivateDnsName);
+
+	private EC2OndemandSlave newOnDemandSlaveOrCry(Instance existingInstance) {
+		EC2OndemandSlave ondemandSlave;
+		try {
+			ondemandSlave = newOndemandSlave(existingInstance);
 		} catch (FormException e) {
 			throw new RuntimeException(e);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
-    }
+		return ondemandSlave;
+	}
 
 	private RunInstancesRequest createRunInstanceRequest(AmazonEC2 ec2, int numberOfInstancesToCreate, KeyPair keyPair) 
 	{
@@ -362,10 +359,129 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 	}
 
 	@Override
-	public EC2Slave provision(TaskListener listener) throws AmazonClientException, IOException {
-		EC2Slave provisionedSlave = super.provision(listener);
+	public EC2AbstractSlave provision(TaskListener listener) throws AmazonClientException, IOException {
+		EC2AbstractSlave provisionedSlave = super.provision(listener);
 		if (instanceLabel != null)
 			provisionedSlave.setLabelString(instanceLabel);
 		return provisionedSlave;
+	}
+	
+	private List<EC2AbstractSlave> provisionMultipleSpot(StreamTaskListener listener, int numberOfInstancesToCreate) throws AmazonClientException, IOException {
+		PrintStream logger = listener.getLogger();
+		AmazonEC2 ec2 = getParent().connect();
+		List<EC2AbstractSlave> spotSlaves = new ArrayList<EC2AbstractSlave>();
+
+		try{
+			logger.println("Launching " + ami + " for template " + description);
+			KeyPair keyPair = getKeyPair(ec2);
+
+			RequestSpotInstancesRequest spotRequest = new RequestSpotInstancesRequest();
+
+			if (getSpotMaxBidPrice() == null){
+				throw new AmazonClientException("Invalid Spot price specified: " + getSpotMaxBidPrice());
+			}
+
+			spotRequest.setSpotPrice(getSpotMaxBidPrice());
+			spotRequest.setInstanceCount(numberOfInstancesToCreate);
+			spotRequest.setType(getBidType());
+
+			LaunchSpecification launchSpecification = new LaunchSpecification();
+
+			launchSpecification.setImageId(ami);
+			launchSpecification.setInstanceType(type);
+
+			if (StringUtils.isNotBlank(getZone())) {
+				SpotPlacement placement = new SpotPlacement(getZone());
+				launchSpecification.setPlacement(placement);
+			}
+
+			if (StringUtils.isNotBlank(getSubnetId())) {
+				launchSpecification.setSubnetId(getSubnetId());
+
+				/* If we have a subnet ID then we can only use VPC security groups */
+				if (!getSecurityGroupSet().isEmpty()) {
+                    List<String> group_ids = getEc2SecurityGroups(ec2);
+                    ArrayList<GroupIdentifier> groups = new ArrayList<GroupIdentifier>();
+
+                    for (String group_id : group_ids) {
+                      GroupIdentifier group = new GroupIdentifier();
+                      group.setGroupId(group_id);
+                      groups.add(group);
+                    }
+
+                    if (!groups.isEmpty())
+                        launchSpecification.setAllSecurityGroups(groups);
+                }
+			} else {
+				/* No subnet: we can use standard security groups by name */
+				if (getSecurityGroupSet().size() > 0)
+					launchSpecification.setSecurityGroups(getSecurityGroupSet());
+			}
+
+			// The slave must know the Jenkins server to register with as well
+			// as the name of the node in Jenkins it should register as. The only
+			// way to give information to the Spot slaves is through the ec2 user data
+			String jenkinsUrl = Hudson.getInstance().getRootUrl();
+			
+			// We must provide a unique node name for the slave to connect to Jenkins.
+			// We don't have the EC2 generated instance ID, or the Spot request ID
+			// until after the instance is requested, which is then too late to set the
+			// user-data for the request. Instead we generate a unique name from UUID
+			// so that the slave has a unique name within Jenkins to register to.
+			String slaveName = UUID.randomUUID().toString();
+			String newUserData = "JENKINS_URL=" + jenkinsUrl +
+					"&SLAVE_NAME=" + slaveName +
+					"&USER_DATA=" + Base64.encodeBase64String(userData.getBytes());
+
+			String userDataString = Base64.encodeBase64String(newUserData.getBytes());
+			launchSpecification.setUserData(userDataString);
+			launchSpecification.setKeyName(keyPair.getKeyName());
+			launchSpecification.setInstanceType(type.toString());
+
+			
+			spotRequest.setLaunchSpecification(launchSpecification);
+
+			// Make the request for a new Spot instance
+			RequestSpotInstancesResult reqResult = ec2.requestSpotInstances(spotRequest);
+
+			List<SpotInstanceRequest> reqInstances = reqResult.getSpotInstanceRequests();
+			if (reqInstances.size() <= 0){
+				throw new AmazonClientException("No spot instances found");
+			}
+
+			HashSet<Tag> inst_tags = null;
+			if (getTags() != null && !getTags().isEmpty()) {
+				inst_tags = new HashSet<Tag>();
+				for(EC2Tag t : getTags()) {
+					inst_tags.add(new Tag(t.getName(), t.getValue()));
+				}
+			}
+			for (SpotInstanceRequest spotInstanceRequest : reqInstances) {
+				if (spotInstanceRequest == null){
+					logger.println("Spot instance request is null");
+					continue;
+				}
+				/* Now that we have our Spot request, we can set tags on it */
+				if (inst_tags != null) {
+					updateRemoteTags(ec2, inst_tags, spotInstanceRequest.getSpotInstanceRequestId());
+					// That was a remote request - we should also update our local instance data.
+					spotInstanceRequest.setTags(inst_tags);
+					ModifyInstanceAttributeRequest modifyInstanceAttributeRequest = 
+							new ModifyInstanceAttributeRequest(); 
+					modifyInstanceAttributeRequest.setUserData("");
+					ec2.modifyInstanceAttribute(modifyInstanceAttributeRequest);
+				}
+				
+				logger.println("Spot instance id in provision: " + spotInstanceRequest.getSpotInstanceRequestId());
+				EC2SpotSlave newSpotSlave = newSpotSlave(spotInstanceRequest, slaveName);
+				
+				spotSlaves.add(newSpotSlave);
+			}
+			
+			return spotSlaves;
+
+		}  catch (FormException e) {
+			throw new AssertionError(); // we should have discovered all configuration issues upfront
+		}
 	}
 }

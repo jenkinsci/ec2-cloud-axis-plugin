@@ -1,6 +1,7 @@
 package hudson.plugins.ec2;
 
 import hudson.model.TaskListener;
+import hudson.model.Computer;
 import hudson.model.Descriptor.FormException;
 import hudson.model.Hudson;
 import hudson.model.Node;
@@ -11,11 +12,13 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
+import java.util.concurrent.Future;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang.StringUtils;
@@ -37,7 +40,6 @@ import com.amazonaws.services.ec2.model.Instance;
 import com.amazonaws.services.ec2.model.InstanceStateName;
 import com.amazonaws.services.ec2.model.KeyPair;
 import com.amazonaws.services.ec2.model.LaunchSpecification;
-import com.amazonaws.services.ec2.model.ModifyInstanceAttributeRequest;
 import com.amazonaws.services.ec2.model.Placement;
 import com.amazonaws.services.ec2.model.RequestSpotInstancesRequest;
 import com.amazonaws.services.ec2.model.RequestSpotInstancesResult;
@@ -49,6 +51,10 @@ import com.amazonaws.services.ec2.model.StartInstancesRequest;
 import com.amazonaws.services.ec2.model.StartInstancesResult;
 import com.amazonaws.services.ec2.model.Subnet;
 import com.amazonaws.services.ec2.model.Tag;
+import com.trilead.ssh2.ChannelCondition;
+import com.trilead.ssh2.Connection;
+import com.trilead.ssh2.ServerHostKeyVerifier;
+import com.trilead.ssh2.Session;
 
 
 public class Ec2AxisSlaveTemplate extends SlaveTemplate {
@@ -128,8 +134,23 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
         	logger.println("Slave "+ newOndemandSlave.getDisplayName() +"created for instance "+inst.getInstanceId());
         	allocatedSlaves.add(newOndemandSlave);
 		}
+        
+        Map<EC2AbstractSlave, Future<?>> connectionByLabel = new HashMap<EC2AbstractSlave, Future<?>>();
+        for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
+        	Computer computer = ec2Slave.toComputer();
+        	Future<?> connectPromise = computer.connect(false);
+        	connectionByLabel.put(ec2Slave, connectPromise);
+		}
+        monitorSlavesToReportConnectionErrors(logger, connectionByLabel);
         return allocatedSlaves;
     }
+
+	private void monitorSlavesToReportConnectionErrors(PrintStream logger, final Map<EC2AbstractSlave, Future<?>> connectionByLabel) 
+	{
+		final EC2SlaveConnectionMonitor slaveMonitor = new EC2SlaveConnectionMonitor(connectionByLabel, logger);
+		final Thread threadToWaitAndReportSlaveErrors = new Thread(slaveMonitor, "Waiting slaves to come up");
+		threadToWaitAndReportSlaveErrors.start();
+	}
 
 	private List<EC2AbstractSlave> requestStoppedInstancesToAllocation(
 			PrintStream logger, AmazonEC2 ec2, KeyPair keyPair) {
@@ -138,7 +159,7 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		List<Filter> describeInstanceFilters = new ArrayList<Filter>();
 		describeInstanceFilters.add(new Filter("image-id").withValues(ami));
 		if (StringUtils.isNotBlank(zone)) {
-		    describeInstanceFilters.add(new Filter("availability-zone").withValues(getZone()));
+		    describeInstanceFilters.add(new Filter("availability-zone").withValues(zone));
 		}
 
 		if (StringUtils.isNotBlank(getSubnetId())) {
@@ -224,7 +245,7 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		RunInstancesRequest runInstanceRequest = new RunInstancesRequest(ami, numberOfInstancesToCreate, numberOfInstancesToCreate);
 		setupDeviceMapping(runInstanceRequest);
 		if (StringUtils.isNotBlank(zone)) {
-			Placement placement = new Placement(getZone());
+			Placement placement = new Placement(zone);
 			runInstanceRequest.setPlacement(placement);
 		}
 		if (StringUtils.isNotBlank(getSubnetId())) {
@@ -390,8 +411,8 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 			launchSpecification.setImageId(ami);
 			launchSpecification.setInstanceType(type);
 
-			if (StringUtils.isNotBlank(getZone())) {
-				SpotPlacement placement = new SpotPlacement(getZone());
+			if (StringUtils.isNotBlank(zone)) {
+				SpotPlacement placement = new SpotPlacement(zone);
 				launchSpecification.setPlacement(placement);
 			}
 
@@ -418,27 +439,9 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 					launchSpecification.setSecurityGroups(getSecurityGroupSet());
 			}
 
-			// The slave must know the Jenkins server to register with as well
-			// as the name of the node in Jenkins it should register as. The only
-			// way to give information to the Spot slaves is through the ec2 user data
-			String jenkinsUrl = Hudson.getInstance().getRootUrl();
-			
-			// We must provide a unique node name for the slave to connect to Jenkins.
-			// We don't have the EC2 generated instance ID, or the Spot request ID
-			// until after the instance is requested, which is then too late to set the
-			// user-data for the request. Instead we generate a unique name from UUID
-			// so that the slave has a unique name within Jenkins to register to.
-			String slaveName = UUID.randomUUID().toString();
-			String newUserData = "JENKINS_URL=" + jenkinsUrl +
-					"&SLAVE_NAME=" + slaveName +
-					"&USER_DATA=" + Base64.encodeBase64String(userData.getBytes());
-
-			String userDataString = Base64.encodeBase64String(newUserData.getBytes());
-			launchSpecification.setUserData(userDataString);
 			launchSpecification.setKeyName(keyPair.getKeyName());
 			launchSpecification.setInstanceType(type.toString());
 
-			
 			spotRequest.setLaunchSpecification(launchSpecification);
 
 			// Make the request for a new Spot instance
@@ -462,21 +465,21 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 					continue;
 				}
 				/* Now that we have our Spot request, we can set tags on it */
+				String spotInstanceRequestId = spotInstanceRequest.getSpotInstanceRequestId();
 				if (inst_tags != null) {
-					updateRemoteTags(ec2, inst_tags, spotInstanceRequest.getSpotInstanceRequestId());
+					updateRemoteTags(ec2, inst_tags, spotInstanceRequestId);
 					// That was a remote request - we should also update our local instance data.
 					spotInstanceRequest.setTags(inst_tags);
-					ModifyInstanceAttributeRequest modifyInstanceAttributeRequest = 
-							new ModifyInstanceAttributeRequest(); 
-					modifyInstanceAttributeRequest.setUserData("");
-					ec2.modifyInstanceAttribute(modifyInstanceAttributeRequest);
 				}
 				
-				logger.println("Spot instance id in provision: " + spotInstanceRequest.getSpotInstanceRequestId());
+				logger.println("Spot instance id in provision: " + spotInstanceRequestId);
+				String slaveName = description + "("+spotInstanceRequestId+")";
 				EC2SpotSlave newSpotSlave = newSpotSlave(spotInstanceRequest, slaveName);
 				
 				spotSlaves.add(newSpotSlave);
 			}
+			
+			monitorSpotRequestsAndMakeThemConnectToJenkins(logger, ec2, reqInstances, spotSlaves);
 			
 			return spotSlaves;
 
@@ -484,4 +487,63 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 			throw new AssertionError(); // we should have discovered all configuration issues upfront
 		}
 	}
+	
+	private void monitorSpotRequestsAndMakeThemConnectToJenkins(
+			PrintStream logger, final AmazonEC2 ec2, 
+			final List<SpotInstanceRequest> reqInstances, 
+			final List<EC2AbstractSlave> spotSlaves) throws AmazonClientException, IOException 
+	{
+		SpotRequestConnectSupervisor.start(logger, reqInstances, spotSlaves, ec2, getKeyPair(ec2).getKeyMaterial().toCharArray(), getRemoteAdmin());
+	}
+
+	public static void main(String[] args) throws IOException, InterruptedException {
+		Connection sshConnection = new Connection("10.44.1.244");
+		sshConnection.connect(new ServerHostKeyVerifier() {
+            public boolean verifyServerHostKey(String hostname, int port, String serverHostKeyAlgorithm, byte[] serverHostKey) throws Exception {
+                return true;
+            }
+        });
+		sshConnection.authenticateWithPublicKey("root",( 
+				"-----BEGIN RSA PRIVATE KEY-----\n" + 
+				"MIIEowIBAAKCAQEA5P9A+doGxzMLcQi8XBViHNKBpU26sGZrKL1aoZyM4lKp5ENWIkSIxs231uRi\n" + 
+				"CcamCUFfypWn2jEG7tFu44fuHWuZ0Jdexgdz8iapvrpcMkFwLyqU8Uh6O5ivWVqkwvgvEmPCM7Rz\n" + 
+				"Nyx0unwuT9CRkE5WhQjueh0Gjx3qrJLSPCD2ZplZDoM7t4zYSHFgrF2IRGT9ApgovVr0a81cMBbM\n" + 
+				"I7LvlMxQ0KlJQO05uf/LkD0V5WfT9uaL0rjNhYqjIWKTqZZHS7on2S+BHaeUPfssFHyfdoymCwX0\n" + 
+				"kT7MvIV4V1Osywjs+A6FnQxhiVDyPgDeDoUqKSFZCZW6rjdctjT/PQIDAQABAoIBAEmy7NJ8nNnX\n" + 
+				"T8NdMGHib+UeyqLM1VyYWbyO1HBW1fCw8gSIt1vn+q0g4B3E+thymlU4OQAWEiNiy/xoYuvPf47w\n" + 
+				"Zlx/mvzYwTQZxV+g0rNJ5DUJ202cKdqsVSLIzWYCQgQFHydM2BfVsuuhs7X0RiTPUYEXUsjyNn4w\n" + 
+				"/qnzxr2aslijNvHGDUz8rZPUaerU6ueVr0y+5mZxNV4NTquRl01+p3Wgt18wZbeen5RDWJk1brp6\n" + 
+				"f+umeKg/OAmOKADUdpAOZGA5wLHzLxVOuMW+6SYmf+su1WQsquLaLZl+JoQep4l7ot5plv7+Xom+\n" + 
+				"Wqli3l9dg9Zp60GYWtuZ0v3XNQECgYEA82VdyCFKrhibVWGvvENumSo7GTLKxe+Iefx94xp5Jw/3\n" + 
+				"3g7LuOr/cmqB76cIUsj8VpqgHK8/kW9VLk8xzNcyyj5XW0m4ONOoXHtJyFD3Lwu8i207SrgZa2re\n" + 
+				"Fb2vb2dEsTw0Qi4zAzQ/8cFH6Su5HopBxGart1Lmy5iIjUJk4A0CgYEA8NsBaMOzAWwjDIhBZw2H\n" + 
+				"gMrTuoPxFHpSgT2ctL2kNnHLnLXrEuwGs+40Pohrl08eFXfRo7A/LRbUG2RL53ChyafGauI7BDFS\n" + 
+				"HWT6cIzwxr5HsxybYycCr4J2dZqJU7l5mdOij2HDK04Udw/5cjtucdv+OXvMkCUKWLpzWsrun/EC\n" + 
+				"gYBfvlwpwY7S9TMFXyv17sCu14Hv458IRbV15vDOSTenOgzS+RcCYs6hf2wljZsklZNNrf2VywpC\n" + 
+				"d30Wfmikn3KHRAaxDkq9b+UmnAjmF5NkmkVMw2czeT/mlV9PRhKgzAqlfX1BG1NNy1vsCY/0FRL5\n" + 
+				"BIHidFDQCHhpVlNA3gE4cQKBgDgEF13QNe+cwMIHZn6bLOqNQZTdXtJOaKXaOHnoqSpoaNx3isaJ\n" + 
+				"0j1Cpy/r9mnoYqzHgyA4u1i3OHluaCDZlycZOBJfry4YcmqXs489mDoAwxgrDRCQYBWFmBtd55Zr\n" + 
+				"Spa2G9aQ/B00OZo/QtqIa/VbHtMrsbXMh41/P5jcHYdhAoGBAOgV4exyIVDWscCpK9gjj3glVLdw\n" + 
+				"Rb+crti6VtB84CbZ/scCiUt0G+TzFUnQrRxR9bf5cRO6ER/1u5jYtM0SNjB6GtlN8hzYrLrbJdlC\n" + 
+				"QLU6gbMO8GCk2qYnwr6NrOa+qK9QS988m4UBCmZmcYpNjslvXTvObFql7EQ+4RujZEIC\n" + 
+				"-----END RSA PRIVATE KEY-----").toCharArray(),"");
+		Session openSession = sshConnection.openSession();
+		String cmd = "wget http://10.42.11.168/jenkins/jnlpJars/slave.jar -O slave.jar &&"
+		+ " nohup java -jar slave.jar -jnlpUrl \"http://10.42.11.168/jenkins/computer/Harness%20Slave(sir-2f4b163e)/slave-agent.jnlp\" > slave.log 2> slave.err </dev/null &";
+		execCommandAndWaitForCompletion(openSession,cmd);
+//		List readLines = IOUtils.readLines(out);
+//		System.out.println( StringUtils.join(readLines.toArray(),"\n") );
+		openSession.close();
+	}
+
+private static void execCommandAndWaitForCompletion(Session openSession, String cmd) throws IOException, InterruptedException {
+	int timeoutForCommand = 60 * 1000 * 5;
+	openSession.execCommand(cmd);
+	openSession.waitForCondition(ChannelCondition.EXIT_STATUS, timeoutForCommand);
+	Integer exitStatus = openSession.getExitStatus();
+	if(exitStatus != 0){
+		System.out.println("Command failed: " + cmd);
+		throw new RuntimeException("Command failed: " + cmd);
+	}
+}
 }

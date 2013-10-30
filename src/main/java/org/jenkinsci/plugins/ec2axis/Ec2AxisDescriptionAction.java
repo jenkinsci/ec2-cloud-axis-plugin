@@ -1,9 +1,5 @@
 package org.jenkinsci.plugins.ec2axis;
 
-import java.util.List;
-
-import org.kohsuke.stapler.export.Exported;
-
 import hudson.model.Action;
 
 public class Ec2AxisDescriptionAction implements Action {

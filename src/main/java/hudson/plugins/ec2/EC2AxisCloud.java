@@ -1,8 +1,10 @@
 package hudson.plugins.ec2;
 
+import static org.kohsuke.stapler.Stapler.getCurrentRequest;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.matrix.MatrixBuild.MatrixBuildExecution;
+import hudson.model.Api;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Hudson;
@@ -33,11 +35,15 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.commons.lang.time.StopWatch;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.StaplerRequest;
+import org.kohsuke.stapler.export.Exported;
+import org.kohsuke.stapler.export.ExportedBean;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.KeyPair;
 
+@ExportedBean
 public class EC2AxisCloud extends AmazonEC2Cloud {
 	private static final String END_LABEL_SEPARATOR = "-";
 	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "MATRIX_EXEC_ID";
@@ -48,6 +54,22 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	public EC2AxisCloud(String accessId, String secretKey, String region, String privateKey, String instanceCapStr, List<SlaveTemplate> templates) {
 		super(accessId,secretKey,region, privateKey,instanceCapStr,replaceByEC2AxisSlaveTemplates(templates));
 		ec2PrivateKey = new EC2AxisPrivateKey(privateKey);
+	}
+	
+	public Api getApi() {
+        return new Api(this);
+    }
+	
+	@Exported
+	public String getFoo() {
+		StaplerRequest currentRequest = getCurrentRequest();
+		String parameter = currentRequest.getParameter("myId");
+		return "foo/"+parameter;
+	}
+	
+	@Exported
+	public IHaveAnApi getMe() {
+		return new IHaveAnApi();
 	}
 	
 	public boolean acceptsLabel(Label label) {
@@ -125,29 +147,17 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	{
 		PrintStream logger = buildContext.getListener().getLogger();
 		LinkedList<String> newLabels = allocateNewLabels(ec2Label, remainingLabelsToCreate, logger);
-		StopWatch stopWatch = new StopWatch();
-		stopWatch.start();
 		
 		try {
-			Map<EC2AbstractSlave, Future<?>> connectionByLabel = allocateSlavesAndLaunchThem(ec2Label, logger, newLabels, nextMatrixId);
-			monitorSlavesToReportConnectionErrors(buildContext, connectionByLabel);
-			stopWatch.stop();
-			logger.println("The following slaves are up and running. It took " + stopWatch.getTime() + "ms to start all instances.");
+			allocateSlavesAndLaunchThem(ec2Label, logger, newLabels, nextMatrixId);
 			return newLabels;
 		} catch (Exception e) {
 			logger.print(ExceptionUtils.getFullStackTrace(e));
 			throw new RuntimeException(e);
 		}
 	}
-
-	private void monitorSlavesToReportConnectionErrors(final MatrixBuildExecution buildContext, final Map<EC2AbstractSlave, Future<?>> connectionByLabel) 
-	{
-		final EC2SlaveConnectionMonitor slaveMonitor = new EC2SlaveConnectionMonitor(connectionByLabel, buildContext);
-		final Thread threadToWaitAndReportSlaveErrors = new Thread(slaveMonitor, "Waiting slaves to come up");
-		threadToWaitAndReportSlaveErrors.start();
-	}
-
-	private Map<EC2AbstractSlave, Future<?>> allocateSlavesAndLaunchThem(
+	
+	private void allocateSlavesAndLaunchThem(
 			String ec2Label,
 			final PrintStream logger, 
 			LinkedList<String> allocatedLabels, 
@@ -160,7 +170,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		List<EC2AbstractSlave> allocatedSlaves = slaveTemplate.provisionMultipleSlaves(taskListener, allocatedLabels.size());
 		Iterator<String> labelIt = allocatedLabels.iterator();
 		int matrixIdSeq = nextMatrixId;
-		Map<EC2AbstractSlave, Future<?>> connectionByLabel = new HashMap<EC2AbstractSlave, Future<?>>();
 		
 		for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
 			logger.println("Setting up labels and environment variables for " + ec2Slave.getDisplayName());
@@ -169,11 +178,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			ec2Slave.setLabelString(slaveLabel);
 			EnvVars slaveEnvVars = getSlaveEnvVars(ec2Slave);
 			slaveEnvVars.put(SLAVE_MATRIX_ENV_VAR_NAME, ""+matrixIdSeq++);
-			Computer computer = ec2Slave.toComputer();
-			Future<?> connectionFuture = computer.connect(false);
-			connectionByLabel.put(ec2Slave, connectionFuture);
 		}
-		return connectionByLabel;
 	}
 
 	private EnvVars getSlaveEnvVars(EC2AbstractSlave provisionedSlave) {

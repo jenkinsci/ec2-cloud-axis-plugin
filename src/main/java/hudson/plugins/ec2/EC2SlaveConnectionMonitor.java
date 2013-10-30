@@ -1,7 +1,5 @@
 package hudson.plugins.ec2;
 
-import hudson.matrix.MatrixBuild.MatrixBuildExecution;
-
 import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -13,31 +11,30 @@ import org.apache.commons.lang.exception.ExceptionUtils;
 
 final class EC2SlaveConnectionMonitor implements Runnable {
 	private final Map<EC2AbstractSlave, Future<?>> connectionByLabel;
-	private final MatrixBuildExecution buildContext;
+	private final PrintStream logger;
 
-	EC2SlaveConnectionMonitor( Map<EC2AbstractSlave, Future<?>> connectionByLabel, MatrixBuildExecution buildContext) {
+	EC2SlaveConnectionMonitor( Map<EC2AbstractSlave, Future<?>> connectionByLabel, PrintStream logger) {
 		this.connectionByLabel = connectionByLabel;
-		this.buildContext = buildContext;
+		this.logger = logger;
 	}
 
 	@Override
 	public void run() {
 		final LinkedList<EC2AbstractSlave> nodesToRetry = new LinkedList<EC2AbstractSlave>();
 		for (Entry<EC2AbstractSlave, Future<?>> resultBySlave : connectionByLabel.entrySet()) {
-			if (!waitForConnection(buildContext, resultBySlave, true)) {
+			if (!waitForConnection(resultBySlave, true)) {
 				nodesToRetry.add(resultBySlave.getKey());
 			}
 		}
 		if (nodesToRetry.size() == 0)
 			return;
 		
-		retryConnectionOnFailedLaunches(buildContext, nodesToRetry);
+		retryConnectionOnFailedLaunches(nodesToRetry);
 	}
 
-	private void retryConnectionOnFailedLaunches( final MatrixBuildExecution buildContext, final LinkedList<EC2AbstractSlave> nodesToRetry) {
+	private void retryConnectionOnFailedLaunches(final LinkedList<EC2AbstractSlave> nodesToRetry) {
 		Map<EC2AbstractSlave, Future<?>> reattempts = new HashMap<EC2AbstractSlave, Future<?>>();
 		try {
-			PrintStream logger = buildContext.getListener().getLogger();
 			logger.println("Will retry connection on failed nodes in 5 secs");
 			Thread.sleep(5000);
 			
@@ -50,16 +47,14 @@ final class EC2SlaveConnectionMonitor implements Runnable {
 			throw new RuntimeException(e);
 		}
 		for (Entry<EC2AbstractSlave, Future<?>> futureRetry : reattempts.entrySet()) {
-			waitForConnection(buildContext, futureRetry, false);
+			waitForConnection(futureRetry, false);
 		}
 	}
 
 	private boolean waitForConnection(
-			final MatrixBuildExecution buildContext,
 			Entry<EC2AbstractSlave, Future<?>> future,
 			boolean retry) {
 		EC2AbstractSlave ec2Slave = future.getKey();
-		PrintStream logger = buildContext.getListener().getLogger();
 		logger.println(
 				String.format("Waiting %s (label %s) to come up",
 				ec2Slave.getDisplayName(),ec2Slave.getLabelString()));

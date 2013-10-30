@@ -61,6 +61,9 @@ public class EC2Axis extends LabelAxis {
 	@Override
 	public List<String> rebuild(MatrixBuild.MatrixBuildExecution context) {
 		EC2AxisCloud cloudToUse = EC2AxisCloud.getCloudToUse(ec2label);
+		if (cloudToUse == null) {
+			throw new RuntimeException("Cloud for label " + ec2label + " not found.");
+		}
 		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(context, ec2label, numberOfSlaves, instanceBootTimeoutLimit);
 		Ec2AxisDescriptionAction e = new Ec2AxisDescriptionAction(
 				ec2label,

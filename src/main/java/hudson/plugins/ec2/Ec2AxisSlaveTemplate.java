@@ -1,6 +1,7 @@
 package hudson.plugins.ec2;
 
 import hudson.model.TaskListener;
+import hudson.model.Descriptor.FormException;
 import hudson.util.StreamTaskListener;
 
 import java.io.IOException;
@@ -16,8 +17,10 @@ import com.amazonaws.services.ec2.model.DescribeSecurityGroupsResult;
 import com.amazonaws.services.ec2.model.DescribeSubnetsRequest;
 import com.amazonaws.services.ec2.model.DescribeSubnetsResult;
 import com.amazonaws.services.ec2.model.Filter;
+import com.amazonaws.services.ec2.model.Instance;
 import com.amazonaws.services.ec2.model.KeyPair;
 import com.amazonaws.services.ec2.model.SecurityGroup;
+import com.amazonaws.services.ec2.model.SpotInstanceRequest;
 import com.amazonaws.services.ec2.model.Subnet;
 import com.amazonaws.services.ec2.model.Tag;
 
@@ -139,5 +142,15 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 		if (instanceLabel != null)
 			provisionedSlave.setLabelString(instanceLabel);
 		return provisionedSlave;
+	}
+	
+	@Override
+	public EC2SpotSlave newSpotSlave(SpotInstanceRequest sir, String name) throws FormException, IOException {
+		return super.newSpotSlave(sir, name);
+	}
+	
+	@Override
+	public EC2OndemandSlave newOndemandSlave(Instance inst) throws FormException, IOException {
+		return super.newOndemandSlave(inst);
 	}
 }

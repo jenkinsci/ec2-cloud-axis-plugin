@@ -1,10 +1,9 @@
 package hudson.plugins.ec2;
 
 import hudson.model.Computer;
+import hudson.model.Descriptor.FormException;
 import hudson.model.Hudson;
 import hudson.model.Node;
-import hudson.model.TaskListener;
-import hudson.model.Descriptor.FormException;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -275,19 +274,11 @@ public class ReservedInstanceProvider {
     }
 	
 	private List<BlockDeviceMapping> getAmiBlockDeviceMappings() {
-
-        /*
-         * AmazonEC2#describeImageAttribute does not work due to a bug
-         * https://forums.aws.amazon.com/message.jspa?messageID=231972
-         */
         for (final Image image: cloud.connect().describeImages().getImages()) {
-
             if (ami.equals(image.getImageId())) {
-
                 return image.getBlockDeviceMappings();
             }
         }
-
         throw new AmazonClientException("Unable to get AMI device mapping for " + ami);
     }
 }

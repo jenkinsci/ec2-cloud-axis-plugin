@@ -124,6 +124,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 			long maxWait = System.currentTimeMillis() + timeout;
 			StopWatch stopwatch = new StopWatch();
 			stopwatch.start();
+			logger.println("Trying to connect to "+privateIpAddress);
 			do{
 				success = tryToLaunchSlave(remainingSlaves, jenkinsUrl, privateIpAddress);
 				
@@ -149,7 +150,8 @@ final class SpotRequestConnectSupervisor implements Runnable {
 				logger.println("No slaves remaining to associate!");
 				return false;
 			}
-			logger.println("Trying to connect to "+privateIpAddress);
+			logger.print(".");
+			
 			Connection sshConnection = new Connection(privateIpAddress);
 			sshConnection.connect(new ServerHostKeyVerifier() {
 		        public boolean verifyServerHostKey(String hostname, int port, String serverHostKeyAlgorithm, byte[] serverHostKey) throws Exception {

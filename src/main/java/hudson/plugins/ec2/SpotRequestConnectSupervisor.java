@@ -15,7 +15,6 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.time.StopWatch;
 
 import com.amazonaws.AmazonClientException;
-import com.amazonaws.AmazonServiceException;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.DescribeInstancesRequest;
 import com.amazonaws.services.ec2.model.DescribeInstancesResult;
@@ -38,12 +37,18 @@ final class SpotRequestConnectSupervisor implements Runnable {
 	private PrintStream logger;
 
 	
-	public static void start(PrintStream logger, List<SpotInstanceRequest> reqInstances, List<EC2AbstractSlave> spotSlaves, AmazonEC2 ec2, char [] privateKey, String remoteAdmin) {
+	public static void start(PrintStream logger, 
+			List<SpotInstanceRequest> reqInstances, 
+			List<EC2AbstractSlave> spotSlaves, 
+			AmazonEC2 ec2, 
+			char [] privateKey, 
+			String remoteAdmin) {
 		new Thread(new SpotRequestConnectSupervisor(logger, reqInstances, spotSlaves, ec2, privateKey, remoteAdmin)).start();
 	}
 
 	private SpotRequestConnectSupervisor(
-			PrintStream logger, List<SpotInstanceRequest> reqInstances,
+			PrintStream logger, 
+			List<SpotInstanceRequest> reqInstances,
 			List<EC2AbstractSlave> spotSlaves, 
 			AmazonEC2 ec2,
 			char [] privateKey, 
@@ -64,7 +69,6 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		}
 		LinkedList<String> remainingSlaves = new LinkedList<String>();
 		for (EC2AbstractSlave ec2AbstractSlave : spotSlaves) {
-			logger.println("Adding slave " + ec2AbstractSlave.getNodeName() + " to be associated with an instance");
 			remainingSlaves.add(ec2AbstractSlave.getNodeName());
 		}
 		
@@ -72,36 +76,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 			DescribeSpotInstanceRequestsRequest describeRequest = new DescribeSpotInstanceRequestsRequest();
 			describeRequest.setSpotInstanceRequestIds(spotInstanceRequestIds);
 	
-			try {
-				printlnWithTime("Checking whether spot requests have been fulfilled");
-				DescribeSpotInstanceRequestsResult describeResult = ec2.describeSpotInstanceRequests(describeRequest);
-				List<SpotInstanceRequest> describeResponses = describeResult.getSpotInstanceRequests();
-	
-				List<String> fulfilled = new LinkedList<String>();
-				for (SpotInstanceRequest describeResponse : describeResponses) {
-					if (describeResponse.getState().equals("open")) {
-						continue;
-					}
-					printlnWithTime(
-							"Request fulfilled: " + 
-							describeResponse.getSpotInstanceRequestId() +
-							" Instance id : " + describeResponse.getInstanceId()
-							);
-					fulfilled.add(describeResponse.getInstanceId());
-					spotInstanceRequestIds.remove(describeResponse.getSpotInstanceRequestId());
-				}
-				
-				makeInstanceConnectBackOnJenkins(fulfilled, remainingSlaves);
-				
-			} catch (AmazonServiceException e) {
-				e.printStackTrace();
-			} catch(RuntimeException e) {
-				e.printStackTrace(logger);
-				throw e;
-			} catch(Exception e) {
-				e.printStackTrace(logger);
-				throw new RuntimeException(e);
-			}
+			connectFulfilledInstancesToJenkins(spotInstanceRequestIds, remainingSlaves, describeRequest);
 	
 			try {
 				Thread.sleep(60 * 1000);
@@ -110,19 +85,45 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		} while (spotInstanceRequestIds.size()>0);
 	}
 
+	private void connectFulfilledInstancesToJenkins(
+			List<String> spotInstanceRequestIds,
+			LinkedList<String> remainingSlaves,
+			DescribeSpotInstanceRequestsRequest describeRequest) {
+		try {
+			printlnWithTime("Checking whether spot requests have been fulfilled");
+			DescribeSpotInstanceRequestsResult describeResult = ec2.describeSpotInstanceRequests(describeRequest);
+			List<SpotInstanceRequest> describeResponses = describeResult.getSpotInstanceRequests();
+
+			List<String> fulfilled = new LinkedList<String>();
+			for (SpotInstanceRequest describeResponse : describeResponses) {
+				if (describeResponse.getState().equals("open")) {
+					continue;
+				}
+				printlnWithTime(
+						"Request fulfilled: " + 
+						describeResponse.getSpotInstanceRequestId() +
+						" Instance id : " + describeResponse.getInstanceId()
+						);
+				fulfilled.add(describeResponse.getInstanceId());
+				spotInstanceRequestIds.remove(describeResponse.getSpotInstanceRequestId());
+			}
+			
+			makeInstancesConnectBackOnJenkins(fulfilled, remainingSlaves);
+		} catch (Exception e) {
+			e.printStackTrace(logger);
+		}
+	}
+
 	private void printlnWithTime(String string) {
 		logger.println(new SimpleDateFormat().format(new Date()) + " : "+string);
 	}
 
-	private void makeInstanceConnectBackOnJenkins(List<String> fulfilledInstanceIds, LinkedList<String> remainingSlaves) 
+	private void makeInstancesConnectBackOnJenkins(List<String> fulfilledInstanceIds, LinkedList<String> remainingSlaves) 
 			throws AmazonClientException, IOException {
 		if (fulfilledInstanceIds.size() == 0)
 			return;
-		if (remainingSlaves.size() == 0) {
-			logger.println("No slaves remaining!");
-			return;
-		}
-		
+		assert(remainingSlaves.size() != 0);
+				
 		DescribeInstancesResult describeInstances = ec2.describeInstances(new DescribeInstancesRequest().withInstanceIds(fulfilledInstanceIds) );
 		List<Instance> instances = new LinkedList<Instance>();
 		
@@ -154,15 +155,13 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		printlnWithTime("Trying to connect to "+privateIpAddress);
 		do{
 			success = tryToLaunchSlave(slaveToAssociate, privateIpAddress);
-			if(!success)
-				printlnWithTime("Failed "+privateIpAddress +". Try again in "+retryIntervalSecs+" seconds.");
 			try {
 				Thread.sleep(retryIntervalMillis);
 			} catch (InterruptedException e) {
 				printlnWithTime("InterruptedException!!");
 				e.printStackTrace(logger);
 			}
-		}while(!success && System.currentTimeMillis() < maxWait );
+		} while(!success && System.currentTimeMillis() < maxWait );
 		
 		stopwatch.stop();
 		if(!success){
@@ -184,7 +183,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		        }
 		    });
 			if (sshConnection.authenticateWithPublicKey(remoteAdmin, privateKey, "")) {
-				logger.println("Will associate slave " + slaveToAssociate + " with instance with ip " + privateIpAddress);
+				printlnWithTime("Will associate slave " + slaveToAssociate + " with instance with ip " + privateIpAddress);
 				
 				try {
 					Session openSession = sshConnection.openSession();
@@ -195,7 +194,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 					
 					execCommandAndWaitForCompletion(openSession, wgetCmd + " && " + slaveLaunchCmd);
 					openSession.close();
-					logger.println("Successfully connected to "+privateIpAddress);
+					printlnWithTime("Successfully connected to "+privateIpAddress);
 					return true; 
 				}catch(Exception e) {
 					return false;
@@ -203,7 +202,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 			}
 			else {
 				String message = "Could not connect with user " + remoteAdmin + " on " + privateIpAddress;
-				logger.println(message);
+				printlnWithTime(message);
 				throw new RuntimeException(message);
 			}
 		}catch(Exception e) {
@@ -217,7 +216,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		openSession.waitForCondition(ChannelCondition.EXIT_STATUS, timeoutForCommand);
 		Integer exitStatus = openSession.getExitStatus();
 		if(exitStatus != 0){
-			logger.println("Command failed: " + cmd);
+			printlnWithTime("Command failed: " + cmd);
 			throw new RuntimeException("Command failed: " + cmd);
 		}
 	}

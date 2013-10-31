@@ -12,11 +12,9 @@ import hudson.model.Node;
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.Cloud;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
-import hudson.util.StreamTaskListener;
 
 import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.charset.Charset;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -30,13 +28,11 @@ import jenkins.model.Jenkins;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.export.ExportedBean;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.KeyPair;
 
-@ExportedBean
 public class EC2AxisCloud extends AmazonEC2Cloud {
 	private static final String END_LABEL_SEPARATOR = "-";
 	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "MATRIX_EXEC_ID";
@@ -146,14 +142,12 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	{
 		logger.println("Will provision instances for requested labels: " + StringUtils.join(allocatedLabels,","));
 		Ec2AxisSlaveTemplate slaveTemplate = getTemplate(new LabelAtom(ec2Label));
-		StreamTaskListener taskListener = new StreamTaskListener(logger,Charset.forName("UTF-8"));
 		
-		List<EC2AbstractSlave> allocatedSlaves = slaveTemplate.provisionMultipleSlaves(taskListener, allocatedLabels.size());
+		List<EC2AbstractSlave> allocatedSlaves = slaveTemplate.provisionMultipleSlaves(logger, allocatedLabels.size());
 		Iterator<String> labelIt = allocatedLabels.iterator();
 		int matrixIdSeq = nextMatrixId;
 		
 		for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
-			logger.println("Setting up labels and environment variables for " + ec2Slave.getDisplayName());
 			Hudson.getInstance().addNode(ec2Slave);
 			String slaveLabel = labelIt.next();
 			ec2Slave.setLabelString(slaveLabel);
@@ -178,7 +172,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		Integer slavesToComplete = numberOfSlaves - allocatedLabels.size();
 		int currentLabelNumber = 0;
 		for (int i = 0; i < slavesToComplete; i++) {
-			// TODO: make a method to return the next "available" label number
 			int slaveNumber = currentLabelNumber++;
 			String newLabel = ec2Label + END_LABEL_SEPARATOR + String.format("%03d", slaveNumber);
 			allocatedLabels.add(newLabel);

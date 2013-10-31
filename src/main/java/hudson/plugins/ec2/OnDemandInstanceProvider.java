@@ -37,7 +37,7 @@ import com.amazonaws.services.ec2.model.StartInstancesRequest;
 import com.amazonaws.services.ec2.model.StartInstancesResult;
 import com.amazonaws.services.ec2.model.Tag;
 
-public class ReservedInstanceProvider {
+public class OnDemandInstanceProvider {
 	private String ami;
 	private String description;
 	private KeyPair keyPair;
@@ -50,15 +50,18 @@ public class ReservedInstanceProvider {
 	private Ec2AxisSlaveTemplate slaveTemplate;
 	private EC2Cloud cloud;
 	private String userData;
+	private PrintStream logger;
 	
-	public ReservedInstanceProvider(
+	public OnDemandInstanceProvider(
 			KeyPair keyPair, 
 			List<String> ec2SecurityGroups,
-			Ec2AxisSlaveTemplate slaveTemplate) 
+			Ec2AxisSlaveTemplate slaveTemplate,
+			PrintStream logger) 
 	{
 		this.keyPair = keyPair;
 		this.ec2SecurityGroups = ec2SecurityGroups;
 		this.slaveTemplate = slaveTemplate;
+		this.logger = logger;
 		
 		ami = slaveTemplate.ami;
 		description = slaveTemplate.description;
@@ -71,13 +74,13 @@ public class ReservedInstanceProvider {
 		userData = slaveTemplate.userData;
 	}
 	
-	public List<EC2AbstractSlave> provisionMultiple(PrintStream logger, int numberOfInstancesToCreate) 
+	public List<EC2AbstractSlave> provisionMultiple(int numberOfInstancesToCreate) 
 			throws AmazonClientException, IOException {
 		
         AmazonEC2 ec2 = cloud.connect();
 
         logger.println("Launching " + ami + " for template " + description);
-        List<EC2AbstractSlave> allocatedSlaves = (List<EC2AbstractSlave>) requestStoppedInstancesToAllocation(logger, ec2, keyPair);
+        List<EC2AbstractSlave> allocatedSlaves = (List<EC2AbstractSlave>) requestStoppedInstancesToAllocation(ec2, keyPair);
         int instancesRemainingToCreate = numberOfInstancesToCreate - allocatedSlaves.size();
         if (instancesRemainingToCreate == 0)
         	return allocatedSlaves;
@@ -106,23 +109,28 @@ public class ReservedInstanceProvider {
         
         Map<EC2AbstractSlave, Future<?>> connectionByLabel = new HashMap<EC2AbstractSlave, Future<?>>();
         for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
+        	Hudson.getInstance().addNode(ec2Slave);
         	Computer computer = ec2Slave.toComputer();
+        	if (computer == null) {
+        		logger.println(ec2Slave.getDisplayName() + " computer is NULL");
+        		continue;
+        	}
         	Future<?> connectPromise = computer.connect(false);
         	connectionByLabel.put(ec2Slave, connectPromise);
 		}
-        monitorSlavesToReportConnectionErrors(logger, connectionByLabel);
+        monitorSlavesToReportConnectionErrors(connectionByLabel);
         return allocatedSlaves;
     }
 	
-	private void monitorSlavesToReportConnectionErrors(PrintStream logger, final Map<EC2AbstractSlave, Future<?>> connectionByLabel) 
+	private void monitorSlavesToReportConnectionErrors(final Map<EC2AbstractSlave, Future<?>> connectionByLabel) 
 	{
-		final EC2SlaveConnectionMonitor slaveMonitor = new EC2SlaveConnectionMonitor(connectionByLabel, logger);
+		final OnDemandSlaveConnectionMonitor slaveMonitor = new OnDemandSlaveConnectionMonitor(connectionByLabel, logger);
 		final Thread threadToWaitAndReportSlaveErrors = new Thread(slaveMonitor, "Waiting slaves to come up");
 		threadToWaitAndReportSlaveErrors.start();
 	}
 
 	private List<EC2AbstractSlave> requestStoppedInstancesToAllocation(
-			PrintStream logger, AmazonEC2 ec2, KeyPair keyPair) {
+			AmazonEC2 ec2, KeyPair keyPair) {
 		List<EC2AbstractSlave> slavesForExistingStoppedInstances = new LinkedList<EC2AbstractSlave>();
 		
 		List<Filter> describeInstanceFilters = new ArrayList<Filter>();
@@ -161,16 +169,14 @@ public class ReservedInstanceProvider {
 		describeInstanceFilters.add(new Filter("instance-state-name").withValues(InstanceStateName.Stopped.toString(), 
 				InstanceStateName.Stopping.toString()));
 		diRequest.setFilters(describeInstanceFilters);
-		logger.println("Looking for existing instances: "+diRequest);
 
 		DescribeInstancesResult diResult = ec2.describeInstances(diRequest);
 		if (diResult.getReservations().size() == 0) 
 			return slavesForExistingStoppedInstances;
 		List<Instance> instances = diResult.getReservations().get(0).getInstances();
 
-		//TODO: multiple startRequests could be combined 
 		for (Instance existingInstance : instances) {
-			logger.println("Found existing stopped instance: "+existingInstance);
+			logger.println("Found existing stopped instance: " + existingInstance);
 			List<String> instancesNames = new ArrayList<String>();
 			instancesNames.add(existingInstance.getInstanceId());
 			StartInstancesRequest siRequest = new StartInstancesRequest(instancesNames);
@@ -201,11 +207,9 @@ public class ReservedInstanceProvider {
 		EC2OndemandSlave ondemandSlave;
 		try {
 			ondemandSlave = slaveTemplate.newOndemandSlave(existingInstance);
-		} catch (FormException e) {
+		} catch (Exception e) {
 			throw new RuntimeException(e);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
+		} 
 		return ondemandSlave;
 	}
 
@@ -220,7 +224,6 @@ public class ReservedInstanceProvider {
 		if (StringUtils.isNotBlank(subnetId)) {
 		   runInstanceRequest.setSubnetId(subnetId);
 
-		   /* If we have a subnet ID then we can only use VPC security groups */
 		   if (!securityGroupSet.isEmpty()) {
 		      List<String> group_ids = ec2SecurityGroups;
 
@@ -229,7 +232,6 @@ public class ReservedInstanceProvider {
 		      }
 		   }
 		} else {
-		   /* No subnet: we can use standard security groups by name */
 			runInstanceRequest.setSecurityGroups(securityGroupSet);
 		}
 

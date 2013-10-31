@@ -2,9 +2,9 @@ package hudson.plugins.ec2;
 
 import hudson.model.TaskListener;
 import hudson.model.Descriptor.FormException;
-import hudson.util.StreamTaskListener;
 
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -58,19 +58,19 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 			 toDecorate.getLaunchTimeoutStr());
 	}
 	
-	public List<EC2AbstractSlave> provisionMultipleSlaves(StreamTaskListener listener, int numberOfInstancesToCreate) {
+	public List<EC2AbstractSlave> provisionMultipleSlaves(PrintStream logger, int numberOfInstancesToCreate) {
 		try {
 			AmazonEC2 ec2 = getParent().connect();
 			KeyPair keyPair = getKeyPair(ec2);
 			List<String> ec2SecurityGroups = getEc2SecurityGroups(ec2);
 			
 			if (spotConfig != null) {
-				SpotInstanceProvider spotInstanceFactory = new SpotInstanceProvider(keyPair, ec2SecurityGroups, this);
-				return spotInstanceFactory.provisionMultiple( listener.getLogger(), numberOfInstancesToCreate);
+				SpotInstanceProvider spotInstanceFactory = new SpotInstanceProvider(keyPair, ec2SecurityGroups, this, logger);
+				return spotInstanceFactory.provisionMultiple(numberOfInstancesToCreate);
 			}
 			
-			ReservedInstanceProvider reservedInstanceProvider = new ReservedInstanceProvider(keyPair, ec2SecurityGroups, this);
-			return reservedInstanceProvider.provisionMultiple( listener.getLogger(), numberOfInstancesToCreate);
+			OnDemandInstanceProvider reservedInstanceProvider = new OnDemandInstanceProvider(keyPair, ec2SecurityGroups, this, logger);
+			return reservedInstanceProvider.provisionMultiple(numberOfInstancesToCreate);
 			
 		} catch (Exception e) {
 			throw new RuntimeException(e);

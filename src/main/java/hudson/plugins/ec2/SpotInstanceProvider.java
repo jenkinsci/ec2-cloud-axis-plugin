@@ -37,15 +37,18 @@ public class SpotInstanceProvider {
 	private List<EC2Tag> tags;
 	private Ec2AxisSlaveTemplate slaveTemplate;
 	private EC2Cloud cloud;
+	private PrintStream logger;
 	
 	public SpotInstanceProvider(
 			KeyPair keyPair, 
 			List<String> ec2SecurityGroups,
-			Ec2AxisSlaveTemplate slaveTemplate) 
+			Ec2AxisSlaveTemplate slaveTemplate,
+			PrintStream logger) 
 	{
 		this.keyPair = keyPair;
 		this.slaveTemplate = slaveTemplate;
 		this.ec2SecurityGroups = ec2SecurityGroups;
+		this.logger = logger;
 		
 		this.ami = slaveTemplate.ami;
 		this.description = slaveTemplate.description;
@@ -59,7 +62,7 @@ public class SpotInstanceProvider {
 		this.cloud = slaveTemplate.getParent();
 	}
 	
-	public List<EC2AbstractSlave> provisionMultiple( PrintStream logger, int numberOfInstancesToCreate)
+	public List<EC2AbstractSlave> provisionMultiple(int numberOfInstancesToCreate)
 					throws AmazonClientException, IOException {
 		List<EC2AbstractSlave> spotSlaves = new ArrayList<EC2AbstractSlave>();
 
@@ -149,17 +152,16 @@ public class SpotInstanceProvider {
 				spotSlaves.add(newSpotSlave);
 			}
 			
-			monitorSpotRequestsAndMakeThemConnectToJenkins(logger, ec2, reqInstances, spotSlaves);
+			monitorSpotRequestsAndMakeThemConnectToJenkins(ec2, reqInstances, spotSlaves);
 			
 			return spotSlaves;
-
 		}  catch (FormException e) {
-			throw new AssertionError(); // we should have discovered all configuration issues upfront
+			throw new AssertionError();
 		}
 	}
 	
 	private void monitorSpotRequestsAndMakeThemConnectToJenkins(
-			PrintStream logger, final AmazonEC2 ec2, 
+			final AmazonEC2 ec2, 
 			final List<SpotInstanceRequest> reqInstances, 
 			final List<EC2AbstractSlave> spotSlaves) throws AmazonClientException, IOException 
 	{

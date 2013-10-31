@@ -9,11 +9,11 @@ import java.util.concurrent.Future;
 
 import org.apache.commons.lang.exception.ExceptionUtils;
 
-final class EC2SlaveConnectionMonitor implements Runnable {
+final class OnDemandSlaveConnectionMonitor implements Runnable {
 	private final Map<EC2AbstractSlave, Future<?>> connectionByLabel;
 	private final PrintStream logger;
 
-	EC2SlaveConnectionMonitor( Map<EC2AbstractSlave, Future<?>> connectionByLabel, PrintStream logger) {
+	OnDemandSlaveConnectionMonitor( Map<EC2AbstractSlave, Future<?>> connectionByLabel, PrintStream logger) {
 		this.connectionByLabel = connectionByLabel;
 		this.logger = logger;
 	}
@@ -34,18 +34,16 @@ final class EC2SlaveConnectionMonitor implements Runnable {
 
 	private void retryConnectionOnFailedLaunches(final LinkedList<EC2AbstractSlave> nodesToRetry) {
 		Map<EC2AbstractSlave, Future<?>> reattempts = new HashMap<EC2AbstractSlave, Future<?>>();
+		logger.println("Will retry connection on failed nodes in 5 secs");
 		try {
-			logger.println("Will retry connection on failed nodes in 5 secs");
 			Thread.sleep(5000);
-			
-			for (EC2AbstractSlave ec2Slave : nodesToRetry) {
-				logger.println("Retrying connection on slave name " + ec2Slave.getDisplayName());
-				reattempts.put(ec2Slave, ec2Slave.toComputer().connect(true));
-			}
-			
-		} catch (InterruptedException e) {
-			throw new RuntimeException(e);
+		} catch (InterruptedException e) { }
+		
+		for (EC2AbstractSlave ec2Slave : nodesToRetry) {
+			logger.println("Retrying connection on slave name " + ec2Slave.getDisplayName());
+			reattempts.put(ec2Slave, ec2Slave.toComputer().connect(true));
 		}
+		
 		for (Entry<EC2AbstractSlave, Future<?>> futureRetry : reattempts.entrySet()) {
 			waitForConnection(futureRetry, false);
 		}
@@ -55,9 +53,7 @@ final class EC2SlaveConnectionMonitor implements Runnable {
 			Entry<EC2AbstractSlave, Future<?>> future,
 			boolean retry) {
 		EC2AbstractSlave ec2Slave = future.getKey();
-		logger.println(
-				String.format("Waiting %s (label %s) to come up",
-				ec2Slave.getDisplayName(),ec2Slave.getLabelString()));
+		logger.println( String.format("Waiting %s (label %s) to come up", ec2Slave.getDisplayName(),ec2Slave.getLabelString()));
 		
 		try {
 			future.getValue().get();
@@ -66,8 +62,7 @@ final class EC2SlaveConnectionMonitor implements Runnable {
 					ec2Slave.getLabelString()));
 			return true;
 		}catch(Exception e) {
-			logger.println("Slave for label '"+ec2Slave.getLabelString()+"' failed to connect.");
-			logger.println("Slave name is: " + ec2Slave.getDisplayName());
+			logger.println("Slave '"+ec2Slave.getDisplayName()+"' with label '"+ec2Slave.getLabelString()+"' failed to connect.");
 			logger.print(ExceptionUtils.getFullStackTrace(e));
 			return false;
 		}

@@ -1,6 +1,5 @@
 package hudson.plugins.ec2;
 
-import static org.kohsuke.stapler.Stapler.getCurrentRequest;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.matrix.MatrixBuild.MatrixBuildExecution;
@@ -19,24 +18,18 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantLock;
 
 import jenkins.model.Jenkins;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
-import org.apache.commons.lang.time.StopWatch;
 import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.StaplerRequest;
-import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.export.ExportedBean;
 
 import com.amazonaws.AmazonClientException;
@@ -59,19 +52,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	public Api getApi() {
         return new Api(this);
     }
-	
-	@Exported
-	public String getFoo() {
-		StaplerRequest currentRequest = getCurrentRequest();
-		String parameter = currentRequest.getParameter("myId");
-		return "foo/"+parameter;
-	}
-	
-	@Exported
-	public IHaveAnApi getMe() {
-		return new IHaveAnApi();
-	}
-	
+		
 	public boolean acceptsLabel(Label label) {
 		return getTemplateGivenLabel(label) != null;
 	}

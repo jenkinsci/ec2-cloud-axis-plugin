@@ -78,7 +78,8 @@ final class SpotRequestConnectSupervisor implements Runnable {
 					if (describeResponse.getState().equals("open")) {
 						continue;
 					}
-					logger.println("Request fulfilled: " + 
+					logger.println(
+							"Request fulfilled: " + 
 							describeResponse.getSpotInstanceRequestId() +
 							" Instance id : " + describeResponse.getInstanceId()
 							);
@@ -88,21 +89,17 @@ final class SpotRequestConnectSupervisor implements Runnable {
 				makeInstanceConnectBackOnJenkins(fulfilled, remainingSlaves);
 			} catch (AmazonServiceException e) {
 				e.printStackTrace();
-			} catch (AmazonClientException e) {
-				throw new RuntimeException(e);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
 			} catch(RuntimeException e) {
 				e.printStackTrace(logger);
 				throw e;
+			} catch(Exception e) {
+				e.printStackTrace(logger);
+				throw new RuntimeException(e);
 			}
-			
 	
 			try {
-				// Sleep for 60 seconds.
 				Thread.sleep(60 * 1000);
 			} catch (Exception e) {
-				// Do nothing because it woke up early.
 			}
 		} while (spotInstanceRequestIds.size()>0);
 	}

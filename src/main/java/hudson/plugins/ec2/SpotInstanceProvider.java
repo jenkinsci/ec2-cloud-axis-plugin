@@ -147,7 +147,7 @@ public class SpotInstanceProvider {
 				}
 				
 				logger.println("Spot instance id in provision: " + spotInstanceRequestId);
-				String slaveName = description + "("+spotInstanceRequestId+")";
+				String slaveName = description.replace(" ", "") + "@"+spotInstanceRequestId;
 				EC2SpotSlave newSpotSlave = slaveTemplate.newSpotSlave(spotInstanceRequest, slaveName);
 				
 				spotSlaves.add(newSpotSlave);

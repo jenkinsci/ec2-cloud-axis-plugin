@@ -1,7 +1,6 @@
 package hudson.plugins.ec2;
 
 import hudson.model.Computer;
-import hudson.model.Descriptor.FormException;
 import hudson.model.Hudson;
 import hudson.model.Node;
 

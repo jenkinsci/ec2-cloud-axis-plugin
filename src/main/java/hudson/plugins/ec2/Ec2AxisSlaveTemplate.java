@@ -2,11 +2,13 @@ package hudson.plugins.ec2;
 
 import hudson.model.TaskListener;
 import hudson.model.Descriptor.FormException;
+import hudson.slaves.NodeProperty;
 
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 import com.amazonaws.AmazonClientException;
@@ -151,6 +153,10 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 	
 	@Override
 	public EC2OndemandSlave newOndemandSlave(Instance inst) throws FormException, IOException {
-		return super.newOndemandSlave(inst);
+		return new EC2OndemandSlave(description + " @" + inst.getInstanceId() , inst.getInstanceId() , 
+				description, remoteFS, getSshPort(), getNumExecutors(), instanceLabel, mode, 
+				initScript, Collections.<NodeProperty<?>>emptyList(), remoteAdmin, rootCommandPrefix, jvmopts, 
+				stopOnTerminate, idleTerminationMinutes, inst.getPublicDnsName(), inst.getPrivateDnsName(),
+				EC2Tag.fromAmazonTags(inst.getTags()), parent.name, usePrivateDnsName, launchTimeout);
 	}
 }

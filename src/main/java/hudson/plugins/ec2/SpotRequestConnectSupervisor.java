@@ -8,8 +8,11 @@ import java.io.PrintStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.time.StopWatch;
@@ -67,9 +70,9 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		for (SpotInstanceRequest req : reqInstances) {
 			spotInstanceRequestIds.add(req.getSpotInstanceRequestId());
 		}
-		LinkedList<String> remainingSlaves = new LinkedList<String>();
+		LinkedList<EC2AbstractSlave> remainingSlaves = new LinkedList<EC2AbstractSlave>();
 		for (EC2AbstractSlave ec2AbstractSlave : spotSlaves) {
-			remainingSlaves.add(ec2AbstractSlave.getNodeName());
+			remainingSlaves.add(ec2AbstractSlave);
 		}
 		
 		do {
@@ -87,7 +90,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 
 	private void connectFulfilledInstancesToJenkins(
 			List<String> spotInstanceRequestIds,
-			LinkedList<String> remainingSlaves,
+			LinkedList<EC2AbstractSlave> remainingSlaves,
 			DescribeSpotInstanceRequestsRequest describeRequest) {
 		try {
 			printlnWithTime("Checking whether spot requests have been fulfilled");
@@ -118,29 +121,39 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		logger.println(new SimpleDateFormat().format(new Date()) + " : "+string);
 	}
 
-	private void makeInstancesConnectBackOnJenkins(List<String> fulfilledInstanceIds, LinkedList<String> remainingSlaves) 
+	private void makeInstancesConnectBackOnJenkins(List<String> fulfilledInstanceIds, LinkedList<EC2AbstractSlave> remainingSlaves) 
 			throws AmazonClientException, IOException {
 		if (fulfilledInstanceIds.size() == 0)
 			return;
 		assert(remainingSlaves.size() != 0);
 				
 		DescribeInstancesResult describeInstances = ec2.describeInstances(new DescribeInstancesRequest().withInstanceIds(fulfilledInstanceIds) );
-		List<Instance> instances = new LinkedList<Instance>();
+		Map<String, Instance> instances = new LinkedHashMap<String, Instance>();
 		
 		List<Reservation> reservations = describeInstances.getReservations();
 		for (Reservation reservation : reservations) {
-			instances.addAll(reservation.getInstances());
+			instances.put(reservation.getRequesterId(), reservation.getInstances().get(0));
 		}
 		
 		printlnWithTime("Count of instances to connect to: " + instances.size());
-		for (final Instance instance : instances) {
-			final String slaveToAssociate = remainingSlaves.pop();
+		for (final Entry<String, Instance> entry : instances.entrySet()) {
+			final Instance instance = entry.getValue();
+			final String slaveToAssociate = getSlaveToAssociate(entry.getKey(), remainingSlaves);
 			printlnWithTime("Firing up connection for "+slaveToAssociate+" : "+instance.getInstanceId()+"/"+instance.getPrivateIpAddress());
 			new Thread(new Runnable() {  @Override public void run() {
 				associateSlaveToInstanceIpAddress(instance, slaveToAssociate);
 			}}).start();
 		}
 		printlnWithTime("Done firing up threads to handle connections for " + StringUtils.join(fulfilledInstanceIds,", "));
+	}
+
+	private String getSlaveToAssociate(String reqId, LinkedList<EC2AbstractSlave> remainingSlaves) {
+		for (EC2AbstractSlave ec2AbstractSlave : remainingSlaves) {
+			if (((EC2SpotSlave)ec2AbstractSlave).getSpotInstanceRequestId().equals(reqId)) {
+				return ec2AbstractSlave.getNodeName();
+			}
+		}
+		return null;
 	}
 
 	private void associateSlaveToInstanceIpAddress(Instance instance, String slaveToAssociate) {

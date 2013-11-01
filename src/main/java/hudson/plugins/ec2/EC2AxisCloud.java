@@ -6,7 +6,6 @@ import hudson.matrix.MatrixBuild.MatrixBuildExecution;
 import hudson.model.Api;
 import hudson.model.Computer;
 import hudson.model.Executor;
-import hudson.model.Hudson;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.labels.LabelAtom;
@@ -148,7 +147,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		int matrixIdSeq = nextMatrixId;
 		
 		for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
-			Hudson.getInstance().addNode(ec2Slave);
 			String slaveLabel = labelIt.next();
 			ec2Slave.setLabelString(slaveLabel);
 			EnvVars slaveEnvVars = getSlaveEnvVars(ec2Slave);

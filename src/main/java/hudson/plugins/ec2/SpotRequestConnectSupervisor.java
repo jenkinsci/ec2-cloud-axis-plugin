@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import javax.management.RuntimeErrorException;
+
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.time.StopWatch;
 
@@ -128,17 +130,21 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		assert(remainingSlaves.size() != 0);
 				
 		DescribeInstancesResult describeInstances = ec2.describeInstances(new DescribeInstancesRequest().withInstanceIds(fulfilledInstanceIds) );
-		Map<String, Instance> instances = new LinkedHashMap<String, Instance>();
+		List<Instance> instances = new ArrayList<Instance>();
 		
 		List<Reservation> reservations = describeInstances.getReservations();
 		for (Reservation reservation : reservations) {
-			instances.put(reservation.getRequesterId(), reservation.getInstances().get(0));
+			instances.addAll(reservation.getInstances());
 		}
 		
 		printlnWithTime("Count of instances to connect to: " + instances.size());
-		for (final Entry<String, Instance> entry : instances.entrySet()) {
-			final Instance instance = entry.getValue();
-			final String slaveToAssociate = getSlaveToAssociate(entry.getKey(), remainingSlaves);
+		for (final Instance instance : instances) {
+			final EC2AbstractSlave slaveToAssociate = getSlaveToAssociate(instance.getSpotInstanceRequestId(), remainingSlaves);
+			if(slaveToAssociate == null){
+				String message = "SlaveToAssociate is null!!! "+instance.getInstanceId()+"/"+instance.getPrivateIpAddress();
+				printlnWithTime(message);
+				throw new RuntimeException(message);
+			}
 			printlnWithTime("Firing up connection for "+slaveToAssociate+" : "+instance.getInstanceId()+"/"+instance.getPrivateIpAddress());
 			new Thread(new Runnable() {  @Override public void run() {
 				associateSlaveToInstanceIpAddress(instance, slaveToAssociate);
@@ -147,16 +153,16 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		printlnWithTime("Done firing up threads to handle connections for " + StringUtils.join(fulfilledInstanceIds,", "));
 	}
 
-	private String getSlaveToAssociate(String reqId, LinkedList<EC2AbstractSlave> remainingSlaves) {
+	private EC2AbstractSlave getSlaveToAssociate(String reqId, LinkedList<EC2AbstractSlave> remainingSlaves) {
 		for (EC2AbstractSlave ec2AbstractSlave : remainingSlaves) {
 			if (((EC2SpotSlave)ec2AbstractSlave).getSpotInstanceRequestId().equals(reqId)) {
-				return ec2AbstractSlave.getNodeName();
+				return ec2AbstractSlave;
 			}
 		}
 		return null;
 	}
 
-	private void associateSlaveToInstanceIpAddress(Instance instance, String slaveToAssociate) {
+	private void associateSlaveToInstanceIpAddress(Instance instance, EC2AbstractSlave slaveToAssociate) {
 		String privateIpAddress = instance.getPrivateIpAddress();
 		boolean success;
 		long timeout = TimeUnit2.MINUTES.toMillis(20);
@@ -165,9 +171,9 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		long maxWait = System.currentTimeMillis() + timeout;
 		StopWatch stopwatch = new StopWatch();
 		stopwatch.start();
-		printlnWithTime("Trying to connect to "+privateIpAddress);
+		printlnWithTime("Trying to connect Slave " + slaveToAssociate.getDisplayName() + " "+ slaveToAssociate.getLabelString() + " to "+privateIpAddress);
 		do{
-			success = tryToLaunchSlave(slaveToAssociate, privateIpAddress);
+			success = tryToLaunchSlave(slaveToAssociate.getNodeName(), privateIpAddress);
 			try {
 				Thread.sleep(retryIntervalMillis);
 			} catch (InterruptedException e) {

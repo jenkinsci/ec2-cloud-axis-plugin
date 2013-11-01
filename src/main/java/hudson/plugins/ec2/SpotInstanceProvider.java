@@ -1,6 +1,7 @@
 package hudson.plugins.ec2;
 
 import hudson.model.Descriptor.FormException;
+import hudson.model.Hudson;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -150,6 +151,7 @@ public class SpotInstanceProvider {
 				EC2SpotSlave newSpotSlave = slaveTemplate.newSpotSlave(spotInstanceRequest, slaveName);
 				
 				spotSlaves.add(newSpotSlave);
+				Hudson.getInstance().addNode(newSpotSlave);
 			}
 			
 			monitorSpotRequestsAndMakeThemConnectToJenkins(ec2, reqInstances, spotSlaves);

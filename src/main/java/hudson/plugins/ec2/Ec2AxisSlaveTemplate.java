@@ -153,7 +153,7 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 	
 	@Override
 	public EC2OndemandSlave newOndemandSlave(Instance inst) throws FormException, IOException {
-		return new EC2OndemandSlave(description + " @" + inst.getInstanceId() , inst.getInstanceId() , 
+		return new EC2OndemandSlave(description.replace(" ", "") + " @" + inst.getInstanceId() , inst.getInstanceId() , 
 				description, remoteFS, getSshPort(), getNumExecutors(), instanceLabel, mode, 
 				initScript, Collections.<NodeProperty<?>>emptyList(), remoteAdmin, rootCommandPrefix, jvmopts, 
 				stopOnTerminate, idleTerminationMinutes, inst.getPublicDnsName(), inst.getPrivateDnsName(),

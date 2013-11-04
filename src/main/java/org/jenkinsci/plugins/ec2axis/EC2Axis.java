@@ -75,11 +75,11 @@ public class EC2Axis extends LabelAxis {
 		EC2Logger ec2Logger = new EC2Logger(context.getListener().getLogger());
 		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(ec2Logger, ec2label, numberOfSlaves, instanceBootTimeoutLimit);
 		
-		context.getListener().getLogger().println("Will run on the following labels:-------");
+		ec2Logger.println("Will run on the following labels:-------");
 		for (String allocatedSlaveLabel : allocateSlavesLabels) {
-			context.getListener().getLogger().println(allocatedSlaveLabel);
+			ec2Logger.println(allocatedSlaveLabel);
 		}
-		context.getListener().getLogger().println("-----------");
+		ec2Logger.println("-----------");
 		
 		return allocateSlavesLabels;
 	}

@@ -64,16 +64,21 @@ public class EC2Axis extends LabelAxis {
 		if (cloudToUse == null) {
 			throw new RuntimeException("Cloud for label " + ec2label + " not found.");
 		}
+		Ec2AxisDescriptionAction e = new Ec2AxisDescriptionAction(
+				ec2label,
+				numberOfSlaves,
+				cloudToUse.getInstanceType(ec2label),
+				cloudToUse.getSpotPriceIfApplicable(ec2label));
+		context.getBuild().getActions().add(e);
+		
 		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(context, ec2label, numberOfSlaves, instanceBootTimeoutLimit);
-		context.getListener().getLogger().println("Will run on:-------");
+		
+		context.getListener().getLogger().println("Will run on the following labels:-------");
 		for (String allocatedSlaveLabel : allocateSlavesLabels) {
 			context.getListener().getLogger().println(allocatedSlaveLabel);
 		}
 		context.getListener().getLogger().println("-----------");
-		Ec2AxisDescriptionAction e = new Ec2AxisDescriptionAction(
-				ec2label,
-				numberOfSlaves);
-		context.getBuild().getActions().add(e);
+		
 		return allocateSlavesLabels;
 	}
 

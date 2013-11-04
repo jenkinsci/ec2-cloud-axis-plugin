@@ -3,12 +3,14 @@ package hudson.plugins.ec2;
 import hudson.model.TaskListener;
 import hudson.model.Descriptor.FormException;
 import hudson.slaves.NodeProperty;
+import hudson.util.FormValidation;
 
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 
 import com.amazonaws.AmazonClientException;
@@ -16,13 +18,17 @@ import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.CreateTagsRequest;
 import com.amazonaws.services.ec2.model.DescribeSecurityGroupsRequest;
 import com.amazonaws.services.ec2.model.DescribeSecurityGroupsResult;
+import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryRequest;
+import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryResult;
 import com.amazonaws.services.ec2.model.DescribeSubnetsRequest;
 import com.amazonaws.services.ec2.model.DescribeSubnetsResult;
 import com.amazonaws.services.ec2.model.Filter;
 import com.amazonaws.services.ec2.model.Instance;
+import com.amazonaws.services.ec2.model.InstanceType;
 import com.amazonaws.services.ec2.model.KeyPair;
 import com.amazonaws.services.ec2.model.SecurityGroup;
 import com.amazonaws.services.ec2.model.SpotInstanceRequest;
+import com.amazonaws.services.ec2.model.SpotPrice;
 import com.amazonaws.services.ec2.model.Subnet;
 import com.amazonaws.services.ec2.model.Tag;
 
@@ -153,10 +159,49 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 	
 	@Override
 	public EC2OndemandSlave newOndemandSlave(Instance inst) throws FormException, IOException {
-		return new EC2OndemandSlave(description.replace(" ", "") + " @" + inst.getInstanceId() , inst.getInstanceId() , 
+		return new EC2OndemandSlave(description.replace(" ", "") + "@" + inst.getInstanceId() , inst.getInstanceId() , 
 				description, remoteFS, getSshPort(), getNumExecutors(), instanceLabel, mode, 
 				initScript, Collections.<NodeProperty<?>>emptyList(), remoteAdmin, rootCommandPrefix, jvmopts, 
 				stopOnTerminate, idleTerminationMinutes, inst.getPublicDnsName(), inst.getPrivateDnsName(),
 				EC2Tag.fromAmazonTags(inst.getTags()), parent.name, usePrivateDnsName, launchTimeout);
+	}
+
+	public String getCurrentSpotPrice() {
+		String cp = "";
+
+		String region = ((AmazonEC2Cloud)getParent()).getRegion();
+		AmazonEC2 ec2 = EC2Cloud.connect(getParent().getAccessId(), getParent().getSecretKey(), AmazonEC2Cloud.getEc2EndpointUrl(region));
+
+		if(ec2==null) 
+			return null;
+		
+		try {
+			DescribeSpotPriceHistoryRequest request = new DescribeSpotPriceHistoryRequest();
+			InstanceType ec2Type = null;
+			for(InstanceType it : InstanceType.values()){
+				if (it.name().toString().equals(type.name())){
+					ec2Type = it;
+					break;
+				}
+			}
+			if(ec2Type == null){
+				return null;				}
+
+			Collection<String> instanceType = new ArrayList<String>();
+			instanceType.add(ec2Type.toString());
+			request.setInstanceTypes(instanceType);
+			request.setStartTime(new Date());
+
+			DescribeSpotPriceHistoryResult result = ec2.describeSpotPriceHistory(request);
+
+			if(!result.getSpotPriceHistory().isEmpty()){
+				SpotPrice currentPrice = result.getSpotPriceHistory().get(0);
+
+				cp = currentPrice.getSpotPrice();
+			}
+			return cp;
+		} catch (AmazonClientException e) {
+			return null;
+		}
 	}
 }

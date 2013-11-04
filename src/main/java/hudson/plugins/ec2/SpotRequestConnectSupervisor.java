@@ -200,14 +200,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 				printlnWithTime("Will associate slave " + slaveToAssociate + " with instance with ip " + privateIpAddress);
 				
 				try {
-					Session openSession = sshConnection.openSession();
-					String wgetCmd = "wget " + jenkinsUrl + "jnlpJars/slave.jar -O slave.jar";
-					String encodedSlaveToAssociate = slaveToAssociate.replace(" ", "%20");
-					String slaveLaunch = "java -jar slave.jar -jnlpUrl \"" + jenkinsUrl + "computer/" + encodedSlaveToAssociate + "/slave-agent.jnlp\"";
-					String slaveLaunchCmd = "nohup " +slaveLaunch + " > slave.log 2> slave.err </dev/null &";
-					
-					execCommandAndWaitForCompletion(openSession, wgetCmd + " && " + slaveLaunchCmd);
-					openSession.close();
+					startSlaveAgentOnRemoteInstance(slaveToAssociate, jenkinsUrl, sshConnection);
 					printlnWithTime("Successfully connected to "+privateIpAddress);
 					return true; 
 				}catch(Exception e) {
@@ -224,8 +217,20 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		}
 	}
 
+	private void startSlaveAgentOnRemoteInstance(String slaveToAssociate, String jenkinsUrl, Connection sshConnection)
+					throws IOException,	InterruptedException {
+		Session openSession = sshConnection.openSession();
+		String wgetCmd = "wget " + jenkinsUrl + "jnlpJars/slave.jar -O slave.jar";
+		String encodedSlaveToAssociate = slaveToAssociate.replace(" ", "%20");
+		String slaveLaunch = "java -jar slave.jar -jnlpUrl \"" + jenkinsUrl + "computer/" + encodedSlaveToAssociate + "/slave-agent.jnlp\"";
+		String slaveLaunchCmd = "nohup " +slaveLaunch + " > slave.log 2> slave.err </dev/null &";
+		
+		execCommandAndWaitForCompletion(openSession, wgetCmd + " && " + slaveLaunchCmd);
+		openSession.close();
+	}
+
 	private void execCommandAndWaitForCompletion(Session openSession, String cmd) throws IOException, InterruptedException {
-		int timeoutForCommand = 60 * 1000 * 5;
+		long timeoutForCommand = TimeUnit2.MINUTES.toMillis(5);
 		openSession.execCommand(cmd);
 		openSession.waitForCondition(ChannelCondition.EXIT_STATUS, timeoutForCommand);
 		Integer exitStatus = openSession.getExitStatus();

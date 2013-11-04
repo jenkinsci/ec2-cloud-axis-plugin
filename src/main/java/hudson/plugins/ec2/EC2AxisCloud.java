@@ -15,6 +15,7 @@ import hudson.slaves.EnvironmentVariablesNodeProperty;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -100,6 +101,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 
 			if (countOfRemainingLabelsToCreate > 0) {
 				int nextMatrixId = onlineAndAvailableSlaves.size()+1;
+				
 				List<EC2AbstractSlave> newSlaves = createMissingSlaves(
 						buildContext,
 						ec2Label, 
@@ -115,7 +117,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			
 			return slaveLabels;
 		} catch (InterruptedException e1) {
-			throw new RuntimeException(e1);
+			return Arrays.asList();
 		} finally {
 			labelAllocationLock.unlock();
 		}
@@ -199,9 +201,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			String labelString = label.getDisplayName();
 			
 			if (!isExpectedLabel(ec2Label, labelString)) continue;
-			
 			if (!isLabelUsedByMatrixJobs(labelString)) continue;
-			
 			if (!hasAvailableNodes(logger, label)) continue;
 			
 			logger.println(labelString + " has online and available nodes.");
@@ -315,5 +315,17 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 
 	public KeyPair getKeyPair(AmazonEC2 ec2) throws AmazonClientException, IOException {
 		return ec2PrivateKey.find(ec2);
+	}
+
+	public String getSpotPriceIfApplicable(String ec2Label) {
+		Ec2AxisSlaveTemplate slaveTemplate = getTemplate(new LabelAtom(ec2Label));
+		if (slaveTemplate.getSpotMaxBidPrice() == null)
+			return null;
+		return slaveTemplate.getCurrentSpotPrice();
+	}
+
+	public String getInstanceType(String ec2Label) {
+		Ec2AxisSlaveTemplate slaveTemplate = getTemplate(new LabelAtom(ec2Label));
+		return slaveTemplate.type.name();
 	}
 }

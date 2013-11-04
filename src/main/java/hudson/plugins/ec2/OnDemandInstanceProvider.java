@@ -102,7 +102,7 @@ public class OnDemandInstanceProvider {
         	logger.println("Creating instance: "+inst.getInstanceId());
         	
         	EC2OndemandSlave newOndemandSlave = newOnDemandSlaveOrCry(inst);
-        	logger.println("Slave "+ newOndemandSlave.getDisplayName() +"created for instance "+inst.getInstanceId());
+        	logger.println("Slave "+ newOndemandSlave.getDisplayName() +" created for instance "+inst.getInstanceId());
         	allocatedSlaves.add(newOndemandSlave);
 		}
         

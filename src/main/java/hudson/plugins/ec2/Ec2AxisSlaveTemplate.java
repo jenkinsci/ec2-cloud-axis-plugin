@@ -3,10 +3,8 @@ package hudson.plugins.ec2;
 import hudson.model.TaskListener;
 import hudson.model.Descriptor.FormException;
 import hudson.slaves.NodeProperty;
-import hudson.util.FormValidation;
 
 import java.io.IOException;
-import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -66,7 +64,7 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 			 toDecorate.getLaunchTimeoutStr());
 	}
 	
-	public List<EC2AbstractSlave> provisionMultipleSlaves(PrintStream logger, int numberOfInstancesToCreate) {
+	public List<EC2AbstractSlave> provisionMultipleSlaves(EC2Logger logger, int numberOfInstancesToCreate) {
 		try {
 			AmazonEC2 ec2 = getParent().connect();
 			KeyPair keyPair = getKeyPair(ec2);

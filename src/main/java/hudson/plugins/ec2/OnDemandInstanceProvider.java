@@ -5,7 +5,6 @@ import hudson.model.Hudson;
 import hudson.model.Node;
 
 import java.io.IOException;
-import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -49,13 +48,13 @@ public class OnDemandInstanceProvider {
 	private Ec2AxisSlaveTemplate slaveTemplate;
 	private EC2Cloud cloud;
 	private String userData;
-	private PrintStream logger;
+	private EC2Logger logger;
 	
 	public OnDemandInstanceProvider(
 			KeyPair keyPair, 
 			List<String> ec2SecurityGroups,
 			Ec2AxisSlaveTemplate slaveTemplate,
-			PrintStream logger) 
+			EC2Logger logger) 
 	{
 		this.keyPair = keyPair;
 		this.ec2SecurityGroups = ec2SecurityGroups;

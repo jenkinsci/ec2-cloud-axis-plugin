@@ -4,7 +4,6 @@ import hudson.model.Descriptor.FormException;
 import hudson.model.Hudson;
 
 import java.io.IOException;
-import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -38,13 +37,13 @@ public class SpotInstanceProvider {
 	private List<EC2Tag> tags;
 	private Ec2AxisSlaveTemplate slaveTemplate;
 	private EC2Cloud cloud;
-	private PrintStream logger;
+	private EC2Logger logger;
 	
 	public SpotInstanceProvider(
 			KeyPair keyPair, 
 			List<String> ec2SecurityGroups,
 			Ec2AxisSlaveTemplate slaveTemplate,
-			PrintStream logger) 
+			EC2Logger logger) 
 	{
 		this.keyPair = keyPair;
 		this.slaveTemplate = slaveTemplate;

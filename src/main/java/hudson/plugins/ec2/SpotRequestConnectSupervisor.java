@@ -4,10 +4,7 @@ import hudson.model.Hudson;
 import hudson.util.TimeUnit2;
 
 import java.io.IOException;
-import java.io.PrintStream;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -34,10 +31,10 @@ final class SpotRequestConnectSupervisor implements Runnable {
 	private final AmazonEC2 ec2;
 	private String remoteAdmin;
 	private char [] privateKey;
-	private PrintStream logger;
+	private EC2Logger logger;
 
 	
-	public static void start(PrintStream logger, 
+	public static void start(EC2Logger logger, 
 			List<SpotInstanceRequest> reqInstances, 
 			List<EC2AbstractSlave> spotSlaves, 
 			AmazonEC2 ec2, 
@@ -47,7 +44,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 	}
 
 	private SpotRequestConnectSupervisor(
-			PrintStream logger, 
+			EC2Logger logger, 
 			List<SpotInstanceRequest> reqInstances,
 			List<EC2AbstractSlave> spotSlaves, 
 			AmazonEC2 ec2,
@@ -90,7 +87,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 			LinkedList<EC2AbstractSlave> remainingSlaves,
 			DescribeSpotInstanceRequestsRequest describeRequest) {
 		try {
-			printlnWithTime("Checking whether spot requests have been fulfilled");
+			logger.println("Checking whether spot requests have been fulfilled");
 			DescribeSpotInstanceRequestsResult describeResult = ec2.describeSpotInstanceRequests(describeRequest);
 			List<SpotInstanceRequest> describeResponses = describeResult.getSpotInstanceRequests();
 
@@ -99,23 +96,17 @@ final class SpotRequestConnectSupervisor implements Runnable {
 				if (describeResponse.getState().equals("open")) {
 					continue;
 				}
-				printlnWithTime(
-						"Request fulfilled: " + 
-						describeResponse.getSpotInstanceRequestId() +
-						" Instance id : " + describeResponse.getInstanceId()
-						);
+				logger.println("Request fulfilled: " + 
+				describeResponse.getSpotInstanceRequestId() +
+				" Instance id : " + describeResponse.getInstanceId());
 				fulfilled.add(describeResponse.getInstanceId());
 				spotInstanceRequestIds.remove(describeResponse.getSpotInstanceRequestId());
 			}
 			
 			makeInstancesConnectBackOnJenkins(fulfilled, remainingSlaves);
 		} catch (Exception e) {
-			e.printStackTrace(logger);
+			logger.printStackTrace(e);
 		}
-	}
-
-	private void printlnWithTime(String string) {
-		logger.println(new SimpleDateFormat().format(new Date()) + " : "+string);
 	}
 
 	private void makeInstancesConnectBackOnJenkins(List<String> fulfilledInstanceIds, LinkedList<EC2AbstractSlave> remainingSlaves) 
@@ -132,20 +123,20 @@ final class SpotRequestConnectSupervisor implements Runnable {
 			instances.addAll(reservation.getInstances());
 		}
 		
-		printlnWithTime("Count of instances to connect to: " + instances.size());
+		logger.println("Count of instances to connect to: " + instances.size());
 		for (final Instance instance : instances) {
 			final EC2AbstractSlave slaveToAssociate = getSlaveToAssociate(instance.getSpotInstanceRequestId(), remainingSlaves);
 			if(slaveToAssociate == null){
 				String message = "SlaveToAssociate is null!!! "+instance.getInstanceId()+"/"+instance.getPrivateIpAddress();
-				printlnWithTime(message);
+				logger.println(message);
 				throw new RuntimeException(message);
 			}
-			printlnWithTime("Firing up connection for "+slaveToAssociate+" : "+instance.getInstanceId()+"/"+instance.getPrivateIpAddress());
+			logger.println("Firing up connection for "+slaveToAssociate+" : "+instance.getInstanceId()+"/"+instance.getPrivateIpAddress());
 			new Thread(new Runnable() {  @Override public void run() {
 				associateSlaveToInstanceIpAddress(instance, slaveToAssociate);
 			}}).start();
 		}
-		printlnWithTime("Done firing up threads to handle connections for " + StringUtils.join(fulfilledInstanceIds,", "));
+		logger.println("Done firing up threads to handle connections for " + StringUtils.join(fulfilledInstanceIds,", "));
 	}
 
 	private EC2AbstractSlave getSlaveToAssociate(String reqId, LinkedList<EC2AbstractSlave> remainingSlaves) {
@@ -166,23 +157,23 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		long maxWait = System.currentTimeMillis() + timeout;
 		StopWatch stopwatch = new StopWatch();
 		stopwatch.start();
-		printlnWithTime("Trying to connect Slave " + slaveToAssociate.getDisplayName() + " "+ slaveToAssociate.getLabelString() + " to "+privateIpAddress);
+		logger.println("Trying to connect Slave " + slaveToAssociate.getDisplayName() + " "+ slaveToAssociate.getLabelString() + " to "+privateIpAddress);
 		do{
 			success = tryToLaunchSlave(slaveToAssociate.getNodeName(), privateIpAddress);
 			try {
 				Thread.sleep(retryIntervalMillis);
 			} catch (InterruptedException e) {
-				printlnWithTime("InterruptedException!!");
-				e.printStackTrace(logger);
+				logger.println("InterruptedException!!");
+				logger.printStackTrace(e);
 			}
 		} while(!success && System.currentTimeMillis() < maxWait );
 		
 		stopwatch.stop();
 		if(!success){
-			printlnWithTime("ERROR! Could not connect to "+privateIpAddress);
+			logger.println("ERROR! Could not connect to "+privateIpAddress);
 		}
 		else {
-			printlnWithTime("It took " + stopwatch.getTime() + " ms to connect to "+ privateIpAddress );
+			logger.println("It took " + stopwatch.getTime() + " ms to connect to "+ privateIpAddress);
 		}
 	}
 
@@ -197,11 +188,11 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		        }
 		    });
 			if (sshConnection.authenticateWithPublicKey(remoteAdmin, privateKey, "")) {
-				printlnWithTime("Will associate slave " + slaveToAssociate + " with instance with ip " + privateIpAddress);
+				logger.println("Will associate slave " + slaveToAssociate + " with instance with ip " + privateIpAddress);
 				
 				try {
 					startSlaveAgentOnRemoteInstance(slaveToAssociate, jenkinsUrl, sshConnection);
-					printlnWithTime("Successfully connected to "+privateIpAddress);
+					logger.println("Successfully connected to "+privateIpAddress);
 					return true; 
 				}catch(Exception e) {
 					return false;
@@ -209,7 +200,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 			}
 			else {
 				String message = "Could not connect with user " + remoteAdmin + " on " + privateIpAddress;
-				printlnWithTime(message);
+				logger.println(message);
 				throw new RuntimeException(message);
 			}
 		}catch(Exception e) {
@@ -235,7 +226,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		openSession.waitForCondition(ChannelCondition.EXIT_STATUS, timeoutForCommand);
 		Integer exitStatus = openSession.getExitStatus();
 		if(exitStatus != 0){
-			printlnWithTime("Command failed: " + cmd);
+			logger.println("Command failed: " + cmd);
 			throw new RuntimeException("Command failed: " + cmd);
 		}
 	}

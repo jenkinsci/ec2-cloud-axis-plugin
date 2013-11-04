@@ -2,7 +2,6 @@ package hudson.plugins.ec2;
 
 import hudson.EnvVars;
 import hudson.Extension;
-import hudson.matrix.MatrixBuild.MatrixBuildExecution;
 import hudson.model.Api;
 import hudson.model.Computer;
 import hudson.model.Executor;
@@ -13,7 +12,6 @@ import hudson.slaves.Cloud;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 
 import java.io.IOException;
-import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -27,7 +25,6 @@ import java.util.concurrent.locks.ReentrantLock;
 import jenkins.model.Jenkins;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.exception.ExceptionUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import com.amazonaws.AmazonClientException;
@@ -85,7 +82,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	final static ReentrantLock  labelAllocationLock = new ReentrantLock();
 	
 	public List<String> allocateSlavesLabels(
-			MatrixBuildExecution buildContext, 
+			final EC2Logger logger, 
 			String ec2Label, 
 			Integer numberOfSlaves, 
 			Integer instanceBootTimeoutLimit) 
@@ -93,7 +90,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		try {
 			labelAllocationLock.lockInterruptibly();
 			
-			final PrintStream logger = buildContext.getListener().getLogger();
 			LinkedList<EC2AbstractSlave> onlineAndAvailableSlaves = findOnlineEligibleSlavesToAllocate(logger, ec2Label, numberOfSlaves);
 			int countOfRemainingLabelsToCreate = numberOfSlaves - onlineAndAvailableSlaves.size();
 			LinkedList<EC2AbstractSlave> allSlaves = new LinkedList<EC2AbstractSlave>();
@@ -103,7 +99,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 				int nextMatrixId = onlineAndAvailableSlaves.size()+1;
 				
 				List<EC2AbstractSlave> newSlaves = createMissingSlaves(
-						buildContext,
+						logger,
 						ec2Label, 
 						countOfRemainingLabelsToCreate, 
 						nextMatrixId);
@@ -124,25 +120,24 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 
 	private List<EC2AbstractSlave> createMissingSlaves(
-			MatrixBuildExecution buildContext, 
+			EC2Logger logger, 
 			String ec2Label, 
 			int remainingLabelsToCreate,
 			int nextMatrixId) 
 	{
-		PrintStream logger = buildContext.getListener().getLogger();
 		LinkedList<String> newLabels = allocateNewLabels(ec2Label, remainingLabelsToCreate, logger);
 		
 		try {
 			return allocateSlavesAndLaunchThem(ec2Label, logger, newLabels, nextMatrixId);
 		} catch (Exception e) {
-			logger.print(ExceptionUtils.getFullStackTrace(e));
+			logger.printStackTrace(e);
 			throw new RuntimeException(e);
 		}
 	}
 	
 	private List<EC2AbstractSlave> allocateSlavesAndLaunchThem(
 			String ec2Label,
-			final PrintStream logger, 
+			final EC2Logger logger, 
 			LinkedList<String> allocatedLabels, 
 			int nextMatrixId) throws IOException 
 	{
@@ -171,7 +166,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return v.getEnvVars();
 	}
 	
-	private synchronized LinkedList<String> allocateNewLabels(String ec2Label, Integer numberOfSlaves, PrintStream logger) 
+	private synchronized LinkedList<String> allocateNewLabels(String ec2Label, Integer numberOfSlaves, EC2Logger logger) 
 	{
 		LinkedList<String> allocatedLabels = new LinkedList<String>();
 		logger.println("Starting creation of new labels to assign");
@@ -187,7 +182,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 
 	private LinkedList<EC2AbstractSlave> findOnlineEligibleSlavesToAllocate(
-			PrintStream logger,
+			EC2Logger logger,
 			String ec2Label, 
 			Integer numberOfSlaves) 
 	{
@@ -265,7 +260,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 	
 
-	private boolean hasAvailableNodes(PrintStream logger, Label label) {
+	private boolean hasAvailableNodes(EC2Logger logger, Label label) {
 		Set<Node> nodes = label.getNodes();
 		boolean hasNodeOnlineAndAvailable = hasNodeOnlineAndAvailable(logger, label, nodes);
 		if (!hasNodeOnlineAndAvailable) 
@@ -273,10 +268,10 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return  hasNodeOnlineAndAvailable;
 	}
 
-	private boolean hasNodeOnlineAndAvailable(PrintStream logger, Label label, Set<Node> nodes) {
+	private boolean hasNodeOnlineAndAvailable(EC2Logger logger, Label label, Set<Node> nodes) {
 		if (nodes.size() == 0)
 			return false;
-		logger.append(label.getDisplayName()+": label has nodes\n");
+		logger.println(label.getDisplayName()+": label has nodes");
 		for (Node node : nodes) {
 			String nodeName = node.getDisplayName();
 			logger.println("Checking node : " + nodeName);
@@ -287,7 +282,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			if (isNodeOnlineAndAvailable(c) && hasAvailableExecutor(c))
 				return true;
 			
-			logger.append(nodeName + " node not available." );
+			logger.println(nodeName + " node not available." );
 		}
 		return false;
 	}

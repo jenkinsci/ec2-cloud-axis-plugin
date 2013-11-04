@@ -1,19 +1,16 @@
 package hudson.plugins.ec2;
 
-import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.Future;
 
-import org.apache.commons.lang.exception.ExceptionUtils;
-
 final class OnDemandSlaveConnectionMonitor implements Runnable {
 	private final Map<EC2AbstractSlave, Future<?>> connectionByLabel;
-	private final PrintStream logger;
+	private final EC2Logger logger;
 
-	OnDemandSlaveConnectionMonitor( Map<EC2AbstractSlave, Future<?>> connectionByLabel, PrintStream logger) {
+	OnDemandSlaveConnectionMonitor( Map<EC2AbstractSlave, Future<?>> connectionByLabel, EC2Logger logger) {
 		this.connectionByLabel = connectionByLabel;
 		this.logger = logger;
 	}
@@ -72,7 +69,7 @@ final class OnDemandSlaveConnectionMonitor implements Runnable {
 			return true;
 		}catch(Exception e) {
 			logger.println("Slave '"+ec2Slave.getDisplayName()+"' with label '"+ec2Slave.getLabelString()+"' failed to connect.");
-			logger.print(ExceptionUtils.getFullStackTrace(e));
+			logger.printStackTrace(e);
 			return false;
 		}
 	}

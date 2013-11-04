@@ -14,6 +14,7 @@ import hudson.model.Messages;
 import hudson.model.Label;
 import hudson.model.labels.LabelAtom;
 import hudson.plugins.ec2.EC2AxisCloud;
+import hudson.plugins.ec2.EC2Logger;
 import hudson.util.FormValidation;
 
 import java.util.Arrays;
@@ -71,7 +72,8 @@ public class EC2Axis extends LabelAxis {
 				cloudToUse.getSpotPriceIfApplicable(ec2label));
 		context.getBuild().getActions().add(e);
 		
-		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(context, ec2label, numberOfSlaves, instanceBootTimeoutLimit);
+		EC2Logger ec2Logger = new EC2Logger(context.getListener().getLogger());
+		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(ec2Logger, ec2label, numberOfSlaves, instanceBootTimeoutLimit);
 		
 		context.getListener().getLogger().println("Will run on the following labels:-------");
 		for (String allocatedSlaveLabel : allocateSlavesLabels) {

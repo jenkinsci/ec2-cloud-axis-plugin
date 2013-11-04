@@ -33,7 +33,6 @@ final class SpotRequestConnectSupervisor implements Runnable {
 	private char [] privateKey;
 	private EC2Logger logger;
 
-	
 	public static void start(EC2Logger logger, 
 			List<SpotInstanceRequest> reqInstances, 
 			List<EC2AbstractSlave> spotSlaves, 

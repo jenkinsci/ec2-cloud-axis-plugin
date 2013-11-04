@@ -1,19 +1,15 @@
 package hudson.plugins.ec2;
 
-import hudson.model.Computer;
 import hudson.model.Hudson;
 import hudson.model.Node;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Future;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang.StringUtils;
@@ -105,28 +101,14 @@ public class OnDemandInstanceProvider {
         	allocatedSlaves.add(newOndemandSlave);
 		}
         
-        Map<EC2AbstractSlave, Future<?>> connectionByLabel = new HashMap<EC2AbstractSlave, Future<?>>();
         for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
         	Hudson.getInstance().addNode(ec2Slave);
-        	Computer computer = ec2Slave.toComputer();
-        	if (computer == null) {
-        		logger.println(ec2Slave.getDisplayName() + " computer is NULL");
-        		continue;
-        	}
-        	Future<?> connectPromise = computer.connect(false);
-        	connectionByLabel.put(ec2Slave, connectPromise);
 		}
-        monitorSlavesToReportConnectionErrors(connectionByLabel);
+        
+        OnDemandSlaveLauncher.launchSlaves(allocatedSlaves, logger);
         return allocatedSlaves;
     }
 	
-	private void monitorSlavesToReportConnectionErrors(final Map<EC2AbstractSlave, Future<?>> connectionByLabel) 
-	{
-		final OnDemandSlaveConnectionMonitor slaveMonitor = new OnDemandSlaveConnectionMonitor(connectionByLabel, logger);
-		final Thread threadToWaitAndReportSlaveErrors = new Thread(slaveMonitor, "Waiting slaves to come up");
-		threadToWaitAndReportSlaveErrors.start();
-	}
-
 	private List<EC2AbstractSlave> requestStoppedInstancesToAllocation(
 			AmazonEC2 ec2, KeyPair keyPair) {
 		List<EC2AbstractSlave> slavesForExistingStoppedInstances = new LinkedList<EC2AbstractSlave>();

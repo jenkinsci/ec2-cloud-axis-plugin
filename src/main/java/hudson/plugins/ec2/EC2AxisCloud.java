@@ -14,12 +14,9 @@ import hudson.slaves.EnvironmentVariablesNodeProperty;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
 import java.util.concurrent.locks.ReentrantLock;
 
 import jenkins.model.Jenkins;
@@ -125,10 +122,8 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			int remainingLabelsToCreate,
 			int nextMatrixId) 
 	{
-		LinkedList<String> newLabels = allocateNewLabels(ec2Label, remainingLabelsToCreate, logger);
-		
 		try {
-			return allocateSlavesAndLaunchThem(ec2Label, logger, newLabels, nextMatrixId);
+			return allocateSlavesAndLaunchThem(ec2Label, logger, nextMatrixId, remainingLabelsToCreate);
 		} catch (Exception e) {
 			logger.printStackTrace(e);
 			throw new RuntimeException(e);
@@ -138,23 +133,25 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	private List<EC2AbstractSlave> allocateSlavesAndLaunchThem(
 			String ec2Label,
 			final EC2Logger logger, 
-			LinkedList<String> allocatedLabels, 
-			int nextMatrixId) throws IOException 
+			int nextMatrixId, 
+			int remainingLabelsToCreate) throws IOException 
 	{
-		logger.println("Will provision instances for requested labels: " + StringUtils.join(allocatedLabels,","));
+		logger.println("Will provision instances for label: " + ec2Label);
 		Ec2AxisSlaveTemplate slaveTemplate = getTemplate(new LabelAtom(ec2Label));
 		
-		List<EC2AbstractSlave> allocatedSlaves = slaveTemplate.provisionMultipleSlaves(logger, allocatedLabels.size());
-		Iterator<String> labelIt = allocatedLabels.iterator();
+		List<EC2AbstractSlave> allocatedSlaves = slaveTemplate.provisionMultipleSlaves(logger, remainingLabelsToCreate);
 		int matrixIdSeq = nextMatrixId;
 		 
 		for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
-			String slaveLabel = labelIt.next();
-			ec2Slave.setLabelString(slaveLabel);
+			ec2Slave.setLabelString(getAxisLabel(ec2Label));
 			EnvVars slaveEnvVars = getSlaveEnvVars(ec2Slave);
 			slaveEnvVars.put(SLAVE_MATRIX_ENV_VAR_NAME, ""+matrixIdSeq++);
 		}
 		return allocatedSlaves;
+	}
+
+	private String getAxisLabel(String ec2Label) {
+		return ec2Label+"$axis";
 	}
 
 	private EnvVars getSlaveEnvVars(EC2AbstractSlave provisionedSlave) {
@@ -166,21 +163,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return v.getEnvVars();
 	}
 	
-	private synchronized LinkedList<String> allocateNewLabels(String ec2Label, Integer numberOfSlaves, EC2Logger logger) 
-	{
-		LinkedList<String> allocatedLabels = new LinkedList<String>();
-		logger.println("Starting creation of new labels to assign");
-		Integer slavesToComplete = numberOfSlaves - allocatedLabels.size();
-		int currentLabelNumber = 0;
-		for (int i = 0; i < slavesToComplete; i++) {
-			int slaveNumber = currentLabelNumber++;
-			String newLabel = ec2Label + END_LABEL_SEPARATOR + String.format("%03d", slaveNumber);
-			allocatedLabels.add(newLabel);
-			logger.println("New label " + newLabel + " will be created.");
-		}
-		return allocatedLabels;
-	}
-
 	private LinkedList<EC2AbstractSlave> findOnlineEligibleSlavesToAllocate(
 			EC2Logger logger,
 			String ec2Label, 
@@ -188,56 +170,27 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	{
 		logger.println("Starting selection of labels with idle executors for job");
 		final LinkedList<EC2AbstractSlave> onlineAndAvailableLabels = new LinkedList<EC2AbstractSlave>();
-		TreeSet<Label> sortedLabels = getSortedLabels();
 		int matrixId = 1;
-		logger.println("Will check " + sortedLabels.size() +" labels");
-		for (Label label : sortedLabels) {
-			logger.println("Checking label " + label.getDisplayName());
-			String labelString = label.getDisplayName();
-			
-			if (!isExpectedLabel(ec2Label, labelString)) continue;
-			if (!isLabelUsedByMatrixJobs(labelString)) continue;
-			if (!hasAvailableNodes(logger, label)) continue;
-			
-			logger.println(labelString + " has online and available nodes.");
-			Node firstNode = label.getNodes().iterator().next();
-			boolean isNodeEc2Slave = !(firstNode instanceof EC2AbstractSlave);
-			if (isNodeEc2Slave)
+		logger.println("Will check " + ec2Label);
+		
+		Label label = Jenkins.getInstance().getLabel(getAxisLabel(ec2Label));
+		
+		for (Node node : label.getNodes()) {
+			if(!isNodeAvailable(logger, node)) 
 				continue;
 			
-			EnvVars slaveEnvVars = getSlaveEnvVars((EC2AbstractSlave) firstNode);
+			EC2AbstractSlave ec2AbstractSlave = (EC2AbstractSlave) node;
+			EnvVars slaveEnvVars = getSlaveEnvVars(ec2AbstractSlave);
 			slaveEnvVars.put(SLAVE_MATRIX_ENV_VAR_NAME, matrixId+"");
-			onlineAndAvailableLabels.add((EC2AbstractSlave) firstNode);
+			onlineAndAvailableLabels.add(ec2AbstractSlave);
 			matrixId++;
 			
 			if (onlineAndAvailableLabels.size() >= numberOfSlaves)
 				break;
 		}
+		
 		logger.println("Online labels found : " + onlineAndAvailableLabels.size());
 		return onlineAndAvailableLabels;
-	}
-	
-	private boolean isLabelUsedByMatrixJobs(String labelString) {
-		final String[] prefixAndSlaveNumber = labelString.split("\\"+END_LABEL_SEPARATOR);
-		boolean hasSuffix = prefixAndSlaveNumber.length != 1;
-		return hasSuffix;
-	}
-
-	private boolean isExpectedLabel(String ec2Label, String labelString) {
-		return labelString.startsWith(ec2Label);
-	}
-
-	private TreeSet<Label> getSortedLabels() {
-		Set<Label> labels = Jenkins.getInstance().getLabels();
-		TreeSet<Label> sortedLabels = new TreeSet<Label>(new Comparator<Label>() {
-
-			@Override
-			public int compare(Label o1, Label o2) {
-				return o1.getDisplayName().compareTo(o2.getDisplayName());
-			}
-		});
-		sortedLabels.addAll(labels);
-		return sortedLabels;
 	}
 
 	private static List<SlaveTemplate> replaceByEC2AxisSlaveTemplates(List<SlaveTemplate> templates) {
@@ -259,32 +212,18 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return template;
 	}
 	
-
-	private boolean hasAvailableNodes(EC2Logger logger, Label label) {
-		Set<Node> nodes = label.getNodes();
-		boolean hasNodeOnlineAndAvailable = hasNodeOnlineAndAvailable(logger, label, nodes);
-		if (!hasNodeOnlineAndAvailable) 
-			logger.println(label.getDisplayName() + " has no available nodes.");
-		return  hasNodeOnlineAndAvailable;
-	}
-
-	private boolean hasNodeOnlineAndAvailable(EC2Logger logger, Label label, Set<Node> nodes) {
-		if (nodes.size() == 0)
-			return false;
-		logger.println(label.getDisplayName()+": label has nodes");
-		for (Node node : nodes) {
-			String nodeName = node.getDisplayName();
-			logger.println("Checking node : " + nodeName);
-			Computer c = node.toComputer();
-			if (c.isOffline() || c.isConnecting()) {
-				continue;
-			}
-			if (isNodeOnlineAndAvailable(c) && hasAvailableExecutor(c))
-				return true;
-			
-			logger.println(nodeName + " node not available." );
+	private boolean isNodeAvailable(EC2Logger logger, Node node) {
+		boolean isAvailable = false;
+		
+		String nodeName = node.getDisplayName();
+		logger.println("Checking node : " + nodeName);
+		Computer c = node.toComputer();
+		if (c.isOffline() || c.isConnecting()) {
+			isAvailable = false;
 		}
-		return false;
+		if (isNodeOnlineAndAvailable(c) && hasAvailableExecutor(c))
+			isAvailable = true;
+		return isAvailable;
 	}
 
 	private boolean hasAvailableExecutor(Computer c) {

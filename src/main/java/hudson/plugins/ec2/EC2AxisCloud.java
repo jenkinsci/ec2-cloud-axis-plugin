@@ -28,8 +28,9 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.KeyPair;
 
+import static hudson.model.Queue.Item;
+
 public class EC2AxisCloud extends AmazonEC2Cloud {
-	private static final String END_LABEL_SEPARATOR = "-";
 	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "MATRIX_EXEC_ID";
 	private static final String SLAVE_NUM_SEPARATOR = "__";
 	private final EC2AxisPrivateKey ec2PrivateKey;
@@ -261,5 +262,22 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	public String getInstanceType(String ec2Label) {
 		Ec2AxisSlaveTemplate slaveTemplate = getTemplate(new LabelAtom(ec2Label));
 		return slaveTemplate.type.name();
+	}
+
+	public static long getTimeout(EC2AbstractSlave slave) {
+		if (slave.getLaunchTimeoutInMillis() == 0)
+			return 1200;
+		return slave.getLaunchTimeoutInMillis();
+	}
+
+	public static void finishSlaveAndQueuedItems(EC2AbstractSlave slave) {
+		Item[] items = Jenkins.getInstance().getQueue().getItems();
+		for (Item item : items) {
+			if (item.task.getAssignedLabel().getDisplayName().equals(slave.getDisplayName())) {
+				Jenkins.getInstance().getQueue().cancel(item);
+			}
+		}
+		if (!slave.stopOnTerminate)
+			slave.terminate();
 	}
 }

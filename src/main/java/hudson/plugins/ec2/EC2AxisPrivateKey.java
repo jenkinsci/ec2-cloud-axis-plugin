@@ -67,8 +67,10 @@ final class EC2AxisPrivateKey {
      */
     public String getFingerprint() throws IOException {
         Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
-        Reader r = new BufferedReader(new StringReader(privateKey.toString()));
-        PEMReader pem = new PEMReader(r,new PasswordFinder() {
+        @SuppressWarnings("deprecation")
+		Reader r = new BufferedReader(new StringReader(privateKey.toString()));
+        @SuppressWarnings("resource")
+		PEMReader pem = new PEMReader(r,new PasswordFinder() {
             public char[] getPassword() {
                 throw PRIVATE_KEY_WITH_PASSWORD;
             }
@@ -90,7 +92,8 @@ final class EC2AxisPrivateKey {
      * Is this file really a private key?
      */
     public boolean isPrivateKey() throws IOException {
-        BufferedReader br = new BufferedReader(new StringReader(privateKey.toString()));
+        @SuppressWarnings("deprecation")
+		BufferedReader br = new BufferedReader(new StringReader(privateKey.toString()));
         String line;
         while ((line = br.readLine()) != null) {
             if (line.equals("-----BEGIN RSA PRIVATE KEY-----"))
@@ -126,7 +129,8 @@ final class EC2AxisPrivateKey {
         return that instanceof EC2AxisPrivateKey && this.privateKey.equals(((EC2AxisPrivateKey)that).privateKey);
     }
 
-    @Override
+    @SuppressWarnings("deprecation")
+	@Override
     public String toString() {
         return privateKey.toString();
     }

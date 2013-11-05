@@ -32,7 +32,7 @@ import org.kohsuke.stapler.StaplerRequest;
 public class EC2Axis extends LabelAxis {
 
 	private static final Integer DEFAULT_TIMEOUT = 600;
-	final private Integer numberOfSlaves;
+	private Integer numberOfSlaves;
 	private final String ec2label;
 	private final Integer instanceBootTimeoutLimit;
 
@@ -53,6 +53,10 @@ public class EC2Axis extends LabelAxis {
 		
 	public Integer getNumberOfSlaves() {
 		return numberOfSlaves;
+	}
+	
+	public void setNumberOfSlaves(Integer numberOfSlaves) {
+		this.numberOfSlaves = numberOfSlaves;
 	}
 
 	public Integer getInstanceBootTimeoutLimit() {

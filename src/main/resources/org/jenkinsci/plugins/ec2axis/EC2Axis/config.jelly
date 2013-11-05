@@ -9,7 +9,4 @@
   <f:entry title="${%Number of slaves to run}" field="numberOfSlaves">
       <f:textbox/>
   </f:entry>
-  <f:entry title="${%EC2 instance boot timeout limit}" field="instanceBootTimeoutLimit">
-      <f:textbox/>
-  </f:entry>
 </j:jelly>

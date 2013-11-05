@@ -58,5 +58,5 @@
     <developerConnection>scm:git:ssh://git@github.com/jenkinsci/ec2-cloud-axis-plugin.git</developerConnection>
     <url>https://github.com/jenkinsci/ec2-cloud-axis-plugin</url>
   </scm>
-  <url>http://wiki.jenkins-ci.org/display/JENKINS/EC2+Cloud+Axis</url</url>
+  <url>http://wiki.jenkins-ci.org/display/JENKINS/EC2+Cloud+Axis</url>
 </project>

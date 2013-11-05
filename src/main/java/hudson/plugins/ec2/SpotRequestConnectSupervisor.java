@@ -191,7 +191,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		        }
 		    });
 			if (sshConnection.authenticateWithPublicKey(remoteAdmin, privateKey, "")) {
-				logger.println("Will associate slave " + slaveToAssociate + " with instance with ip " + privateIpAddress);
+				logger.println("Will associate slave " + slaveToAssociate + " with instance whose ip is " + privateIpAddress);
 				
 				try {
 					startSlaveAgentOnRemoteInstance(slaveToAssociate, jenkinsUrl, sshConnection);

@@ -10,6 +10,7 @@ import hudson.model.Node;
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.Cloud;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
+import hudson.util.TimeUnit2;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -266,7 +267,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 
 	public static long getTimeout(EC2AbstractSlave slave) {
 		if (slave.getLaunchTimeoutInMillis() == 0)
-			return 1200;
+			return TimeUnit2.MINUTES.toMillis(20);
 		return slave.getLaunchTimeoutInMillis();
 	}
 

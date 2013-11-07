@@ -152,16 +152,18 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 	
 	@Override
 	public EC2SpotSlave newSpotSlave(SpotInstanceRequest sir, String name) throws FormException, IOException {
-		return super.newSpotSlave(sir, name);
+		EC2SpotSlave newSpotSlave = super.newSpotSlave(sir, name);
+		return newSpotSlave;
 	}
 	
 	@Override
 	public EC2OndemandSlave newOndemandSlave(Instance inst) throws FormException, IOException {
-		return new EC2OndemandSlave(description.replace(" ", "") + "@" + inst.getInstanceId() , inst.getInstanceId() , 
+		EC2OndemandSlave ec2OndemandSlave = new EC2OndemandSlave(description.replace(" ", "") + "@" + inst.getInstanceId() , inst.getInstanceId() , 
 				description, remoteFS, getSshPort(), getNumExecutors(), instanceLabel, mode, 
 				initScript, Collections.<NodeProperty<?>>emptyList(), remoteAdmin, rootCommandPrefix, jvmopts, 
 				stopOnTerminate, idleTerminationMinutes, inst.getPublicDnsName(), inst.getPrivateDnsName(),
 				EC2Tag.fromAmazonTags(inst.getTags()), parent.name, usePrivateDnsName, launchTimeout);
+		return ec2OndemandSlave;
 	}
 
 	public String getCurrentSpotPrice() {

@@ -5,11 +5,13 @@ import hudson.Extension;
 import hudson.model.Api;
 import hudson.model.Computer;
 import hudson.model.Executor;
+import hudson.model.Hudson;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.Cloud;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
+import hudson.slaves.RetentionStrategy;
 import hudson.util.TimeUnit2;
 
 import java.io.IOException;
@@ -280,5 +282,13 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		}
 		if (!slave.stopOnTerminate)
 			slave.terminate();
+	}
+
+	@SuppressWarnings("rawtypes")
+	public static void safeAddSlave(EC2AbstractSlave ec2Slave) throws IOException {
+		RetentionStrategy retentionStrategy = ec2Slave.getRetentionStrategy();
+		ec2Slave.setRetentionStrategy(null);
+		Hudson.getInstance().addNode(ec2Slave);
+		ec2Slave.setRetentionStrategy(retentionStrategy);
 	}
 }

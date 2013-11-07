@@ -1,7 +1,6 @@
 package hudson.plugins.ec2;
 
 import hudson.model.Descriptor.FormException;
-import hudson.model.Hudson;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -148,9 +147,9 @@ public class SpotInstanceProvider {
 				logger.println("Spot instance id in provision: " + spotInstanceRequestId);
 				String slaveName = description.replace(" ", "") + "@"+spotInstanceRequestId;
 				EC2SpotSlave newSpotSlave = slaveTemplate.newSpotSlave(spotInstanceRequest, slaveName);
+				EC2AxisCloud.safeAddSlave(newSpotSlave);
 				
 				spotSlaves.add(newSpotSlave);
-				Hudson.getInstance().addNode(newSpotSlave);
 			}
 			
 			monitorSpotRequestsAndMakeThemConnectToJenkins(ec2, reqInstances, spotSlaves);

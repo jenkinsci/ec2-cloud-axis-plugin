@@ -285,7 +285,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 
 	@SuppressWarnings("rawtypes")
-	public static void safeAddSlave(EC2AbstractSlave ec2Slave) throws IOException {
+	static void safeAddSlaveToPreventDeadlock(EC2AbstractSlave ec2Slave) throws IOException {
 		RetentionStrategy retentionStrategy = ec2Slave.getRetentionStrategy();
 		ec2Slave.setRetentionStrategy(null);
 		Hudson.getInstance().addNode(ec2Slave);

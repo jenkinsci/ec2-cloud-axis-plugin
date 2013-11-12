@@ -128,7 +128,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 				logger.println(message);
 				throw new RuntimeException(message);
 			}
-			logger.println("Firing up connection for "+slaveToAssociate+" : "+instance.getInstanceId()+"/"+instance.getPrivateIpAddress());
+			logger.println("Firing up connection for "+instance.getSpotInstanceRequestId()+" : "+instance.getInstanceId()+"/"+instance.getPrivateIpAddress());
 			new Thread(new Runnable() {  @Override public void run() {
 				associateSlaveToInstanceIpAddress(instance, slaveToAssociate);
 			}}).start();
@@ -148,13 +148,15 @@ final class SpotRequestConnectSupervisor implements Runnable {
 	private void associateSlaveToInstanceIpAddress(Instance instance, EC2AbstractSlave slaveToAssociate) {
 		String privateIpAddress = instance.getPrivateIpAddress();
 		boolean success;
-		long timeout = TimeUnit2.MINUTES.toMillis(20);
+		long timeout = EC2AxisCloud.getTimeout(slaveToAssociate);
 		int retryIntervalSecs = 5;
 		long retryIntervalMillis = TimeUnit2.SECONDS.toMillis(retryIntervalSecs);
 		long maxWait = System.currentTimeMillis() + timeout;
 		StopWatch stopwatch = new StopWatch();
 		stopwatch.start();
-		logger.println("Trying to connect Slave " + slaveToAssociate.getDisplayName() + " "+ slaveToAssociate.getLabelString() + " to "+privateIpAddress);
+		String slaveName = slaveToAssociate.getDisplayName();
+		
+		logger.println("Trying to connect Slave " + slaveName + " "+ slaveToAssociate.getLabelString() + " to "+privateIpAddress);
 		do{
 			success = tryToLaunchSlave(slaveToAssociate.getNodeName(), privateIpAddress);
 			try {
@@ -166,11 +168,13 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		} while(!success && System.currentTimeMillis() < maxWait );
 		
 		stopwatch.stop();
+		String slaveIdentString = slaveName+"/"+instance.getInstanceId()+"/"+privateIpAddress;
 		if(!success){
-			logger.println("ERROR! Could not connect to "+privateIpAddress);
+			EC2AxisCloud.finishSlaveAndQueuedItems(slaveToAssociate);
+			logger.println("Slave " + slaveIdentString + " failed to come up after " + timeout + " ms");
 		}
 		else {
-			logger.println("It took " + stopwatch.getTime() + " ms to connect to "+ privateIpAddress);
+			logger.println("It took " + stopwatch.getTime() + " ms to connect to "+ slaveIdentString);
 		}
 	}
 
@@ -185,7 +189,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		        }
 		    });
 			if (sshConnection.authenticateWithPublicKey(remoteAdmin, privateKey, "")) {
-				logger.println("Will associate slave " + slaveToAssociate + " with instance with ip " + privateIpAddress);
+				logger.println("Will associate slave " + slaveToAssociate + " with instance whose ip is " + privateIpAddress);
 				
 				try {
 					startSlaveAgentOnRemoteInstance(slaveToAssociate, jenkinsUrl, sshConnection);

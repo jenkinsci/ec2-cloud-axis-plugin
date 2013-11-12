@@ -7,7 +7,7 @@
   </parent>
 
   <artifactId>ec2-cloud-axis</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.2-SNAPSHOT</version>
   <packaging>hpi</packaging>
 
   <!-- get every artifact through repo.jenkins-ci.org, which proxies all the artifacts that we need -->
@@ -39,11 +39,6 @@
   		<artifactId>ec2</artifactId>
   		<version>1.19</version>
   	</dependency>
-  	<dependency>
-		<groupId>org.jenkins-ci.svnkit</groupId>
-		<artifactId>svnkit</artifactId>
-		<version>1.7.6-jenkins-1</version>  	
-  	</dependency>
   </dependencies>
 
   <build>
@@ -58,4 +53,26 @@
         </plugin>
       </plugins>
   </build>  
+  <scm>
+    <connection>scm:git:ssh://github.com/jenkinsci/ec2-cloud-axis-plugin.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/jenkinsci/ec2-cloud-axis-plugin.git</developerConnection>
+    <url>https://github.com/jenkinsci/ec2-cloud-axis-plugin</url>
+  </scm>
+  <url>http://wiki.jenkins-ci.org/display/JENKINS/EC2+Cloud+Axis</url>
+ <developers>
+    <developer>
+      <id>ifnazar</id>
+      <name>Igor Nazar</name>
+    </developer>
+
+    <developer>
+      <id>beothorn</id>
+      <name>Lucas de Carvalho Bueno Santos</name>
+    </developer>
+
+    <developer>
+      <id>taksan</id>
+      <name>Gabriel Takeuchi</name>
+    </developer>
+  </developers>  
 </project>

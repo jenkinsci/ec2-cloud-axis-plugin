@@ -1,13 +1,14 @@
 package hudson.plugins.ec2;
 
-import hudson.model.Computer;
+import hudson.util.TimeUnit2;
 
 import java.util.List;
 import java.util.concurrent.Future;
 
+import org.apache.commons.lang.time.StopWatch;
+
 final class OnDemandSlaveLauncher implements Runnable {
 
-	private static final int MAX_RETRIES = 10;
 	private final EC2Logger logger;
 	private EC2AbstractSlave slave;
 	private Exception connectionFailed;
@@ -19,24 +20,31 @@ final class OnDemandSlaveLauncher implements Runnable {
 
 	@Override
 	public void run() {
-		int retries = MAX_RETRIES;
+		long timeout = EC2AxisCloud.getTimeout(slave);
+		int retryIntervalSecs = 5;
+		long retryIntervalMillis = TimeUnit2.SECONDS.toMillis(retryIntervalSecs);
+		long maxWait = System.currentTimeMillis() + timeout;
+		StopWatch stopwatch = new StopWatch();
+		stopwatch.start();
+		
 		Future<?> connectionPromise;
 		String displayName = slave.getDisplayName();
 		do {
-			Computer computer = slave.toComputer();
-			connectionPromise = computer.connect(false);
+			connectionPromise = slave.toComputer().connect(false);
 			if (waitForConnection(connectionPromise))
 				return;
 			try {
-				logger.println("Connection to " + displayName + " failed. Will retry in 5 secons");
-				Thread.sleep(5000);
+				logger.println("Connection to " + displayName + " failed. Will retry in "+retryIntervalSecs+" seconds");
+				Thread.sleep(retryIntervalMillis);
 			} catch (InterruptedException e) {
 				logger.printStackTrace(e);
 				return;
 			}
-			retries--;
-		}while(retries > 0);
-		logger.printStackTrace(new RuntimeException("Slave"+displayName+" failed to come up after " + MAX_RETRIES + " retries",connectionFailed));
+		}
+		while(System.currentTimeMillis() < maxWait);
+		EC2AxisCloud.finishSlaveAndQueuedItems(slave);
+		
+		logger.printStackTrace(new RuntimeException("Slave"+displayName+" failed to come up after " + timeout + " ms",connectionFailed));
 	}
 
 	private boolean waitForConnection(Future<?> connectionPromise) {

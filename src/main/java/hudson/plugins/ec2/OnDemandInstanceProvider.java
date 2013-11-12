@@ -102,7 +102,7 @@ public class OnDemandInstanceProvider {
 		}
         
         for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
-        	Hudson.getInstance().addNode(ec2Slave);
+        	EC2AxisCloud.safeAddSlaveToPreventDeadlock(ec2Slave);
 		}
         
         OnDemandSlaveLauncher.launchSlaves(allocatedSlaves, logger);

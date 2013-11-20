@@ -1,5 +1,6 @@
 package hudson.plugins.ec2;
 
+import hudson.model.Hudson;
 import hudson.model.Descriptor.FormException;
 
 import java.io.IOException;
@@ -147,7 +148,7 @@ public class SpotInstanceProvider {
 				logger.println("Spot instance id in provision: " + spotInstanceRequestId);
 				String slaveName = description.replace(" ", "") + "@"+spotInstanceRequestId;
 				EC2SpotSlave newSpotSlave = slaveTemplate.newSpotSlave(spotInstanceRequest, slaveName);
-				EC2AxisCloud.safeAddSlaveToPreventDeadlock(newSpotSlave);
+				Hudson.getInstance().addNode(newSpotSlave);
 				
 				spotSlaves.add(newSpotSlave);
 			}

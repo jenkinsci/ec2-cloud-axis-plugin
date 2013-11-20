@@ -8,6 +8,7 @@ import hudson.model.Executor;
 import hudson.model.Hudson;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.model.Queue;
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.Cloud;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
@@ -31,7 +32,6 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.KeyPair;
 
-import static hudson.model.Queue.Item;
 
 public class EC2AxisCloud extends AmazonEC2Cloud {
 	private static final String SLAVE_MATRIX_ENV_VAR_NAME = "MATRIX_EXEC_ID";
@@ -274,21 +274,13 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 
 	public static void finishSlaveAndQueuedItems(EC2AbstractSlave slave) {
-		Item[] items = Jenkins.getInstance().getQueue().getItems();
-		for (Item item : items) {
+		Queue.Item[] items = Jenkins.getInstance().getQueue().getItems();
+		for (Queue.Item item : items) {
 			if (item.task.getAssignedLabel().getDisplayName().equals(slave.getDisplayName())) {
 				Jenkins.getInstance().getQueue().cancel(item);
 			}
 		}
 		if (!slave.stopOnTerminate)
 			slave.terminate();
-	}
-
-	@SuppressWarnings("rawtypes")
-	static void safeAddSlaveToPreventDeadlock(EC2AbstractSlave ec2Slave) throws IOException {
-		RetentionStrategy retentionStrategy = ec2Slave.getRetentionStrategy();
-		ec2Slave.setRetentionStrategy(null);
-		Hudson.getInstance().addNode(ec2Slave);
-		ec2Slave.setRetentionStrategy(retentionStrategy);
 	}
 }

@@ -153,9 +153,9 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 	@Override
 	public EC2SpotSlave newSpotSlave(SpotInstanceRequest sir, String name) throws FormException, IOException {
 		EC2SpotSlave newSpotSlave = super.newSpotSlave(sir, name);
-		return newSpotSlave;
+		return replaceRetentionStrategy(newSpotSlave);
 	}
-	
+
 	@Override
 	public EC2OndemandSlave newOndemandSlave(Instance inst) throws FormException, IOException {
 		EC2OndemandSlave ec2OndemandSlave = new EC2OndemandSlave(description.replace(" ", "") + "@" + inst.getInstanceId() , inst.getInstanceId() , 
@@ -163,7 +163,13 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 				initScript, Collections.<NodeProperty<?>>emptyList(), remoteAdmin, rootCommandPrefix, jvmopts, 
 				stopOnTerminate, idleTerminationMinutes, inst.getPublicDnsName(), inst.getPrivateDnsName(),
 				EC2Tag.fromAmazonTags(inst.getTags()), parent.name, usePrivateDnsName, launchTimeout);
-		return ec2OndemandSlave;
+		return replaceRetentionStrategy(ec2OndemandSlave);
+	}
+	
+	private <T extends EC2AbstractSlave> T replaceRetentionStrategy(T slave) {
+		EC2RetentionStrategy retentionStrategy = (EC2RetentionStrategy) slave.getRetentionStrategy();
+		slave.setRetentionStrategy(new EC2LazyRetentionStrategy(retentionStrategy.idleTerminationMinutes));
+		return slave;
 	}
 
 	public String getCurrentSpotPrice() {

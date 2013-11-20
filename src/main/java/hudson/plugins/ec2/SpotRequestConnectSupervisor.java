@@ -95,9 +95,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 				if (describeResponse.getState().equals("open")) {
 					continue;
 				}
-				logger.println("Request fulfilled: " + 
-				describeResponse.getSpotInstanceRequestId() +
-				" Instance id : " + describeResponse.getInstanceId());
+				logger.println("Request finished with state: "+describeResponse.getState()+ " " + describeResponse.getSpotInstanceRequestId() + " Instance id : " + describeResponse.getInstanceId());
 				fulfilled.add(describeResponse.getInstanceId());
 				spotInstanceRequestIds.remove(describeResponse.getSpotInstanceRequestId());
 			}

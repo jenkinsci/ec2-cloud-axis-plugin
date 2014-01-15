@@ -217,17 +217,16 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 	
 	private boolean isNodeAvailable(EC2Logger logger, Node node) {
-		boolean isAvailable = false;
-		
 		String nodeName = node.getDisplayName();
 		logger.println("Checking node : " + nodeName);
 		Computer c = node.toComputer();
-		if (c.isOffline() || c.isConnecting()) {
-			isAvailable = false;
-		}
+		if (c.isOffline() || c.isConnecting()) 
+			return false;
+		
 		if (isNodeOnlineAndAvailable(c) && hasAvailableExecutor(c))
-			isAvailable = true;
-		return isAvailable;
+			return true;
+		
+		return false;
 	}
 
 	private boolean hasAvailableExecutor(Computer c) {
@@ -240,7 +239,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	}
 
 	private boolean isNodeOnlineAndAvailable(Computer c) {
-		return (c.isOnline() || c.isConnecting()) && c.isAcceptingTasks();
+		return c.isOnline() && c.isAcceptingTasks();
 	}
 
 	@Extension

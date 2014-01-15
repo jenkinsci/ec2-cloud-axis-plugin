@@ -170,7 +170,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		stopwatch.stop();
 		String slaveIdentString = slaveName+"/"+instance.getInstanceId()+"/"+privateIpAddress;
 		if(!success){
-			EC2AxisCloud.finishSlaveAndQueuedItems(slaveToAssociate);
+			Utils.finishSlaveAndQueuedItems(slaveToAssociate);
 			logger.println("Slave " + slaveIdentString + " failed to come up after " + timeout + " ms");
 		}
 		else {

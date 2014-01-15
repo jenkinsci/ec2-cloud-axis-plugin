@@ -42,7 +42,7 @@ final class OnDemandSlaveLauncher implements Runnable {
 			}
 		}
 		while(System.currentTimeMillis() < maxWait);
-		EC2AxisCloud.finishSlaveAndQueuedItems(slave);
+		Utils.finishSlaveAndQueuedItems(slave);
 		
 		logger.printStackTrace(new RuntimeException("Slave"+displayName+" failed to come up after " + timeout + " ms",connectionFailed));
 	}

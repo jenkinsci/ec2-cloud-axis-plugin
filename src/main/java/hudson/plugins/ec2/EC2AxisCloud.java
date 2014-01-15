@@ -272,15 +272,4 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			return TimeUnit2.MINUTES.toMillis(20);
 		return slave.getLaunchTimeoutInMillis();
 	}
-
-	public static void finishSlaveAndQueuedItems(EC2AbstractSlave slave) {
-		Queue.Item[] items = Jenkins.getInstance().getQueue().getItems();
-		for (Queue.Item item : items) {
-			if (item.task.getAssignedLabel().getDisplayName().equals(slave.getDisplayName())) {
-				Jenkins.getInstance().getQueue().cancel(item);
-			}
-		}
-		if (!slave.stopOnTerminate)
-			slave.terminate();
-	}
 }

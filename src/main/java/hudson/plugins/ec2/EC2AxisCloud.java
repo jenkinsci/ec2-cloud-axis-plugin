@@ -5,14 +5,11 @@ import hudson.Extension;
 import hudson.model.Api;
 import hudson.model.Computer;
 import hudson.model.Executor;
-import hudson.model.Hudson;
 import hudson.model.Label;
 import hudson.model.Node;
-import hudson.model.Queue;
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.Cloud;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
-import hudson.slaves.RetentionStrategy;
 import hudson.util.TimeUnit2;
 
 import java.io.IOException;

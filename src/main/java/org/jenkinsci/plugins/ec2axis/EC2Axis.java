@@ -38,12 +38,9 @@ public class EC2Axis extends LabelAxis {
 	private final Integer instanceBootTimeoutLimit;
 
 	@DataBoundConstructor
-	public EC2Axis(String name, String ec2label, Integer numberOfSlaves, Integer instanceBootTimeoutLimit, boolean alwaysCreateNewNodes) {
+	public EC2Axis(String name, String ec2label, Integer numberOfSlaves, boolean alwaysCreateNewNodes) {
 		super(name, Arrays.asList(ec2label.trim()));
-		if (instanceBootTimeoutLimit == null)
-			this.instanceBootTimeoutLimit = DEFAULT_TIMEOUT;
-		else
-			this.instanceBootTimeoutLimit = instanceBootTimeoutLimit;
+		this.instanceBootTimeoutLimit = DEFAULT_TIMEOUT;
 		this.ec2label = ec2label.trim();
 		this.numberOfSlaves = numberOfSlaves;
 		this.alwaysCreateNewNodes = alwaysCreateNewNodes;
@@ -179,7 +176,6 @@ public class EC2Axis extends LabelAxis {
 	                formData.getString("name"),
 	                formData.getString("ec2label"),
 	                formData.getInt("numberOfSlaves"),
-	                formData.getInt("instanceBootTimeoutLimit"),
 	                formData.getBoolean("alwaysCreateNewNodes")
 	        );
 	    }

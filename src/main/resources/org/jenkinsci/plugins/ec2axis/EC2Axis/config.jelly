@@ -8,5 +8,6 @@
   </f:entry>
   <f:entry title="${%Number of slaves to run}" field="numberOfSlaves">
       <f:textbox/>
+      <f:checkbox title="${%Always create new nodes}" field="alwaysCreateNewNodes"/>
   </f:entry>
 </j:jelly>

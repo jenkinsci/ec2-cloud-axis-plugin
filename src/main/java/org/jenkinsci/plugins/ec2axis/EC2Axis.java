@@ -33,11 +33,12 @@ public class EC2Axis extends LabelAxis {
 
 	private static final Integer DEFAULT_TIMEOUT = 600;
 	private Integer numberOfSlaves;
+	private boolean alwaysCreateNewNodes = false;
 	private final String ec2label;
 	private final Integer instanceBootTimeoutLimit;
 
 	@DataBoundConstructor
-	public EC2Axis(String name, String ec2label, Integer numberOfSlaves, Integer instanceBootTimeoutLimit) {
+	public EC2Axis(String name, String ec2label, Integer numberOfSlaves, Integer instanceBootTimeoutLimit, boolean alwaysCreateNewNodes) {
 		super(name, Arrays.asList(ec2label.trim()));
 		if (instanceBootTimeoutLimit == null)
 			this.instanceBootTimeoutLimit = DEFAULT_TIMEOUT;
@@ -45,6 +46,7 @@ public class EC2Axis extends LabelAxis {
 			this.instanceBootTimeoutLimit = instanceBootTimeoutLimit;
 		this.ec2label = ec2label.trim();
 		this.numberOfSlaves = numberOfSlaves;
+		this.alwaysCreateNewNodes = alwaysCreateNewNodes;
 	}
 
 	public String getEc2label() {
@@ -62,6 +64,10 @@ public class EC2Axis extends LabelAxis {
 	public Integer getInstanceBootTimeoutLimit() {
 		return instanceBootTimeoutLimit;
 	}
+	
+	public boolean isAlwaysCreateNewNodes(){
+		return alwaysCreateNewNodes;
+	}
 
 	@Override
 	public List<String> rebuild(MatrixBuild.MatrixBuildExecution context) {
@@ -77,7 +83,7 @@ public class EC2Axis extends LabelAxis {
 		context.getBuild().getActions().add(e);
 		
 		EC2Logger ec2Logger = new EC2Logger(context.getListener().getLogger());
-		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(ec2Logger, ec2label, numberOfSlaves, instanceBootTimeoutLimit);
+		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(ec2Logger, ec2label, numberOfSlaves, instanceBootTimeoutLimit, alwaysCreateNewNodes);
 		
 		ec2Logger.println("Will run on the following labels:-------");
 		for (String allocatedSlaveLabel : allocateSlavesLabels) {
@@ -173,7 +179,8 @@ public class EC2Axis extends LabelAxis {
 	                formData.getString("name"),
 	                formData.getString("ec2label"),
 	                formData.getInt("numberOfSlaves"),
-	                formData.getInt("instanceBootTimeoutLimit")
+	                formData.getInt("instanceBootTimeoutLimit"),
+	                formData.getBoolean("alwaysCreateNewNodes")
 	        );
 	    }
 	    

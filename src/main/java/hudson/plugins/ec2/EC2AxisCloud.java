@@ -83,12 +83,15 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 			final EC2Logger logger, 
 			String ec2Label, 
 			Integer numberOfSlaves, 
-			Integer instanceBootTimeoutLimit) 
+			Integer instanceBootTimeoutLimit, 
+			boolean alwaysCreateNewNodes) 
 	{
 		try {
 			labelAllocationLock.lockInterruptibly();
 			
-			LinkedList<EC2AbstractSlave> onlineAndAvailableSlaves = findOnlineEligibleSlavesToAllocate(logger, ec2Label, numberOfSlaves);
+			List<EC2AbstractSlave> onlineAndAvailableSlaves = determineOnlineAndAvailableSlaves(
+					logger, ec2Label, numberOfSlaves, alwaysCreateNewNodes);
+						
 			int countOfRemainingLabelsToCreate = numberOfSlaves - onlineAndAvailableSlaves.size();
 			LinkedList<EC2AbstractSlave> allSlaves = new LinkedList<EC2AbstractSlave>();
 			allSlaves.addAll(onlineAndAvailableSlaves);
@@ -115,6 +118,16 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		} finally {
 			labelAllocationLock.unlock();
 		}
+	}
+
+	private List<EC2AbstractSlave> determineOnlineAndAvailableSlaves(
+			final EC2Logger logger, String ec2Label, Integer numberOfSlaves,
+			boolean alwaysCreateNewNodes) {
+		if (alwaysCreateNewNodes){
+			logger.println("Will create new nodes for each slave ");
+			return new ArrayList<EC2AbstractSlave>();
+		}
+		return findOnlineEligibleSlavesToAllocate(logger, ec2Label, numberOfSlaves);
 	}
 
 	private List<EC2AbstractSlave> createMissingSlaves(
@@ -219,7 +232,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		Computer c = node.toComputer();
 		if (c.isOffline() || c.isConnecting()) 
 			return false;
-		
 		if (isNodeOnlineAndAvailable(c) && hasAvailableExecutor(c))
 			return true;
 		
@@ -269,3 +281,4 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		return slave.getLaunchTimeoutInMillis();
 	}
 }
+ 

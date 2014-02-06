@@ -148,7 +148,7 @@ public class SpotInstanceProvider {
 				logger.println("Spot instance id in provision: " + spotInstanceRequestId);
 				String slaveName = description.replace(" ", "") + "@"+spotInstanceRequestId;
 				EC2SpotSlave newSpotSlave = slaveTemplate.newSpotSlave(spotInstanceRequest, slaveName);
-				Hudson.getInstance().addNode(newSpotSlave);
+				Utils.addNode(newSpotSlave);
 				
 				spotSlaves.add(newSpotSlave);
 			}

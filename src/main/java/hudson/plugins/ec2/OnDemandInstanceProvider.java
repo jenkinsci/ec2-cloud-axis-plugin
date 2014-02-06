@@ -102,13 +102,13 @@ public class OnDemandInstanceProvider {
 		}
         
         for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
-        	Hudson.getInstance().addNode(ec2Slave);
+        	Utils.addNode(ec2Slave);
 		}
         
         OnDemandSlaveLauncher.launchSlaves(allocatedSlaves, logger);
         return allocatedSlaves;
     }
-	
+
 	private List<EC2AbstractSlave> requestStoppedInstancesToAllocation(
 			AmazonEC2 ec2, KeyPair keyPair) {
 		List<EC2AbstractSlave> slavesForExistingStoppedInstances = new LinkedList<EC2AbstractSlave>();

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.ec2axis.Ec2NodeAdderTask;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
@@ -148,10 +149,10 @@ public class SpotInstanceProvider {
 				logger.println("Spot instance id in provision: " + spotInstanceRequestId);
 				String slaveName = description.replace(" ", "") + "@"+spotInstanceRequestId;
 				EC2SpotSlave newSpotSlave = slaveTemplate.newSpotSlave(spotInstanceRequest, slaveName);
-				Utils.addNode(newSpotSlave);
-				
 				spotSlaves.add(newSpotSlave);
+				Ec2NodeAdderTask.offer(newSpotSlave);
 			}
+			Ec2NodeAdderTask.waitForCompletion();
 			
 			monitorSpotRequestsAndMakeThemConnectToJenkins(ec2, reqInstances, spotSlaves);
 			

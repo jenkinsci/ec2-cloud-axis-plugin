@@ -13,6 +13,7 @@ import java.util.Set;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.ec2axis.Ec2NodeAdderTask;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
@@ -100,10 +101,7 @@ public class OnDemandInstanceProvider {
         	logger.println("Slave "+ newOndemandSlave.getDisplayName() +" created for instance "+inst.getInstanceId());
         	allocatedSlaves.add(newOndemandSlave);
 		}
-        
-        for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
-        	Utils.addNode(ec2Slave);
-		}
+        Ec2NodeAdderTask.offerAndWaitForCompletion(allocatedSlaves.toArray(new EC2AbstractSlave[0]));
         
         OnDemandSlaveLauncher.launchSlaves(allocatedSlaves, logger);
         return allocatedSlaves;

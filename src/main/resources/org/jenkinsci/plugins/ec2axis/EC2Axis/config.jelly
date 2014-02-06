@@ -9,5 +9,6 @@
   <f:entry title="${%Number of slaves to run}" field="numberOfSlaves">
       <f:textbox/>
       <f:checkbox title="${%Always create new nodes}" field="alwaysCreateNewNodes"/>
+      <f:checkbox title="${%Create matrix environment variable}" field="createMatrixEnvironmentVariable"/>
   </f:entry>
 </j:jelly>

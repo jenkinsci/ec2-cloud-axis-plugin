@@ -14,11 +14,9 @@ import hudson.util.TimeUnit2;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantLock;
 
 import jenkins.model.Jenkins;
 
@@ -76,47 +74,46 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		}
 		return cloudToUse;
 	}
-
-	final static ReentrantLock  labelAllocationLock = new ReentrantLock();
 	
 	public List<String> allocateSlavesLabels(
 			final EC2Logger logger, 
 			String ec2Label, 
 			Integer numberOfSlaves, 
 			Integer instanceBootTimeoutLimit, 
-			boolean alwaysCreateNewNodes) 
+			boolean alwaysCreateNewNodes, 
+			boolean createMatrixEnvironmentVariable) 
 	{
-		try {
-			labelAllocationLock.lockInterruptibly();
-			
-			List<EC2AbstractSlave> onlineAndAvailableSlaves = determineOnlineAndAvailableSlaves(
-					logger, ec2Label, numberOfSlaves, alwaysCreateNewNodes);
-						
-			int countOfRemainingLabelsToCreate = numberOfSlaves - onlineAndAvailableSlaves.size();
-			LinkedList<EC2AbstractSlave> allSlaves = new LinkedList<EC2AbstractSlave>();
-			allSlaves.addAll(onlineAndAvailableSlaves);
+		List<EC2AbstractSlave> onlineAndAvailableSlaves = determineOnlineAndAvailableSlaves(
+				logger, ec2Label, numberOfSlaves, alwaysCreateNewNodes);
+		
+		int countOfRemainingLabelsToCreate = numberOfSlaves - onlineAndAvailableSlaves.size();
+		LinkedList<EC2AbstractSlave> allSlaves = new LinkedList<EC2AbstractSlave>();
+		allSlaves.addAll(onlineAndAvailableSlaves);
 
-			if (countOfRemainingLabelsToCreate > 0) {
-				int nextMatrixId = onlineAndAvailableSlaves.size()+1;
-				
-				List<EC2AbstractSlave> newSlaves = createMissingSlaves(
-						logger,
-						ec2Label, 
-						countOfRemainingLabelsToCreate, 
-						nextMatrixId);
-				allSlaves.addAll(newSlaves);
+		if (countOfRemainingLabelsToCreate > 0) {
+			List<EC2AbstractSlave> newSlaves = createMissingSlaves( logger, ec2Label, countOfRemainingLabelsToCreate);
+			allSlaves.addAll(newSlaves);
+		}
+		
+		createMatrixEnvironmentVariableForAllocatedSlaves( createMatrixEnvironmentVariable, allSlaves);
+		
+		List<String> slaveLabels = new ArrayList<String>();
+		for (EC2AbstractSlave slave : allSlaves) 
+			slaveLabels.add(slave.getNodeName());
+		
+		return slaveLabels;
+	}
+
+	public void createMatrixEnvironmentVariableForAllocatedSlaves(
+			boolean createMatrixEnvironmentVariable,
+			LinkedList<EC2AbstractSlave> allSlaves) {
+		if (createMatrixEnvironmentVariable) {
+			int matrixId = 1;
+			for (EC2AbstractSlave ec2AbstractSlave : allSlaves) {
+				EnvVars slaveEnvVars = getSlaveEnvVars(ec2AbstractSlave);
+				slaveEnvVars.put(SLAVE_MATRIX_ENV_VAR_NAME, matrixId+"");
+				matrixId++;
 			}
-			
-			List<String> slaveLabels = new ArrayList<String>();
-			for (EC2AbstractSlave slave : allSlaves) {
-				slaveLabels.add(slave.getNodeName());
-			}
-			
-			return slaveLabels;
-		} catch (InterruptedException e1) {
-			return Arrays.asList();
-		} finally {
-			labelAllocationLock.unlock();
 		}
 	}
 
@@ -133,11 +130,10 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	private List<EC2AbstractSlave> createMissingSlaves(
 			EC2Logger logger, 
 			String ec2Label, 
-			int remainingLabelsToCreate,
-			int nextMatrixId) 
+			int remainingLabelsToCreate) 
 	{
 		try {
-			return allocateSlavesAndLaunchThem(ec2Label, logger, nextMatrixId, remainingLabelsToCreate);
+			return allocateSlavesAndLaunchThem(ec2Label, logger, remainingLabelsToCreate);
 		} catch (Exception e) {
 			logger.printStackTrace(e);
 			throw new RuntimeException(e);
@@ -147,20 +143,16 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	private List<EC2AbstractSlave> allocateSlavesAndLaunchThem(
 			String ec2Label,
 			final EC2Logger logger, 
-			int nextMatrixId, 
 			int remainingLabelsToCreate) throws IOException 
 	{
 		logger.println("Will provision instances for label: " + ec2Label);
 		Ec2AxisSlaveTemplate slaveTemplate = getTemplate(new LabelAtom(ec2Label));
 		
 		List<EC2AbstractSlave> allocatedSlaves = slaveTemplate.provisionMultipleSlaves(logger, remainingLabelsToCreate);
-		int matrixIdSeq = nextMatrixId;
 		 
-		for (EC2AbstractSlave ec2Slave : allocatedSlaves) {
+		for (EC2AbstractSlave ec2Slave : allocatedSlaves) 
 			ec2Slave.setLabelString(getAxisLabel(ec2Label));
-			EnvVars slaveEnvVars = getSlaveEnvVars(ec2Slave);
-			slaveEnvVars.put(SLAVE_MATRIX_ENV_VAR_NAME, ""+matrixIdSeq++);
-		}
+		
 		return allocatedSlaves;
 	}
 
@@ -184,7 +176,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	{
 		logger.println("Starting selection of labels with idle executors for job");
 		final LinkedList<EC2AbstractSlave> onlineAndAvailableLabels = new LinkedList<EC2AbstractSlave>();
-		int matrixId = 1;
 		logger.println("Will check " + ec2Label);
 		
 		Label label = Jenkins.getInstance().getLabel(getAxisLabel(ec2Label));
@@ -194,10 +185,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 				continue;
 			
 			EC2AbstractSlave ec2AbstractSlave = (EC2AbstractSlave) node;
-			EnvVars slaveEnvVars = getSlaveEnvVars(ec2AbstractSlave);
-			slaveEnvVars.put(SLAVE_MATRIX_ENV_VAR_NAME, matrixId+"");
 			onlineAndAvailableLabels.add(ec2AbstractSlave);
-			matrixId++;
 			
 			if (onlineAndAvailableLabels.size() >= numberOfSlaves)
 				break;

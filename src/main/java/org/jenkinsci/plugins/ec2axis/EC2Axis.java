@@ -12,6 +12,7 @@ import hudson.matrix.MatrixProject;
 import hudson.model.AutoCompletionCandidates;
 import hudson.model.Messages;
 import hudson.model.Label;
+import hudson.model.Run;
 import hudson.model.labels.LabelAtom;
 import hudson.plugins.ec2.EC2AxisCloud;
 import hudson.plugins.ec2.EC2Logger;
@@ -21,6 +22,7 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 import jenkins.model.Jenkins;
 import net.sf.json.JSONObject;
@@ -36,10 +38,12 @@ public class EC2Axis extends LabelAxis {
 	private boolean alwaysCreateNewNodes = false;
 	private final String ec2label;
 	private final Integer instanceBootTimeoutLimit;
+	private boolean createMatrixEnvironmentVariable = false;
 
 	@DataBoundConstructor
-	public EC2Axis(String name, String ec2label, Integer numberOfSlaves, boolean alwaysCreateNewNodes) {
+	public EC2Axis(String name, String ec2label, Integer numberOfSlaves, boolean alwaysCreateNewNodes, boolean createMatrixEnvironmentVariable) {
 		super(name, Arrays.asList(ec2label.trim()));
+		this.setCreateMatrixEnvironmentVariable(createMatrixEnvironmentVariable);
 		this.instanceBootTimeoutLimit = DEFAULT_TIMEOUT;
 		this.ec2label = ec2label.trim();
 		this.numberOfSlaves = numberOfSlaves;
@@ -66,21 +70,46 @@ public class EC2Axis extends LabelAxis {
 		return alwaysCreateNewNodes;
 	}
 
+	final static ReentrantLock  labelAllocationLock = new ReentrantLock();
+	
 	@Override
 	public List<String> rebuild(MatrixBuild.MatrixBuildExecution context) {
+		EC2AxisCloud cloudToUse = getCloudToUse();
+		
+		addEc2Description(context, cloudToUse);
+
+		try {
+			lockForIdleNodeAllocationIfNeeded();
+			return allocateNodes(context, cloudToUse);
+		}finally {
+			releaseLockForIdleNodeAllocation();
+		}
+	}
+
+	private EC2AxisCloud getCloudToUse() {
 		EC2AxisCloud cloudToUse = EC2AxisCloud.getCloudToUse(ec2label);
 		if (cloudToUse == null) {
 			throw new RuntimeException("Cloud for label " + ec2label + " not found.");
 		}
+		return cloudToUse;
+	}
+
+	private void addEc2Description(MatrixBuild.MatrixBuildExecution context, EC2AxisCloud cloudToUse) 
+	{
 		Ec2AxisDescriptionAction e = new Ec2AxisDescriptionAction(
 				ec2label,
 				numberOfSlaves,
 				cloudToUse.getInstanceType(ec2label),
 				cloudToUse.getSpotPriceIfApplicable(ec2label));
 		context.getBuild().getActions().add(e);
-		
+	}
+
+	public List<String> allocateNodes(MatrixBuild.MatrixBuildExecution context,
+			EC2AxisCloud cloudToUse) {
 		EC2Logger ec2Logger = new EC2Logger(context.getListener().getLogger());
-		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(ec2Logger, ec2label, numberOfSlaves, instanceBootTimeoutLimit, alwaysCreateNewNodes);
+		List<String> allocateSlavesLabels = cloudToUse.allocateSlavesLabels(
+				ec2Logger, ec2label, numberOfSlaves, instanceBootTimeoutLimit, alwaysCreateNewNodes, createMatrixEnvironmentVariable
+				);
 		
 		ec2Logger.println("Will run on the following labels:-------");
 		for (String allocatedSlaveLabel : allocateSlavesLabels) {
@@ -89,6 +118,22 @@ public class EC2Axis extends LabelAxis {
 		ec2Logger.println("-----------");
 		
 		return allocateSlavesLabels;
+	}
+
+	private void releaseLockForIdleNodeAllocation() {
+		if (alwaysCreateNewNodes)
+			return;
+		labelAllocationLock.unlock();
+	}
+
+	public void lockForIdleNodeAllocationIfNeeded() {
+		if (alwaysCreateNewNodes)
+			return;
+		try {
+			labelAllocationLock.lockInterruptibly();
+		} catch (InterruptedException e1) {
+			throw new Run.RunnerAbortedException();
+		}
 	}
 
 	@Override
@@ -162,6 +207,15 @@ public class EC2Axis extends LabelAxis {
 		return (MatrixProject)Jenkins.getInstance().getItem(projectName);
 	}
 
+	public boolean isCreateMatrixEnvironmentVariable() {
+		return createMatrixEnvironmentVariable;
+	}
+
+	public void setCreateMatrixEnvironmentVariable(
+			boolean createMatrixEnvironmentVariable) {
+		this.createMatrixEnvironmentVariable = createMatrixEnvironmentVariable;
+	}
+
 	@Extension
 	public static class DescriptorImpl extends AxisDescriptor {
 	
@@ -176,7 +230,8 @@ public class EC2Axis extends LabelAxis {
 	                formData.getString("name"),
 	                formData.getString("ec2label"),
 	                formData.getInt("numberOfSlaves"),
-	                formData.getBoolean("alwaysCreateNewNodes")
+	                formData.getBoolean("alwaysCreateNewNodes"),
+	                formData.getBoolean("createMatrixEnvironmentVariable")
 	        );
 	    }
 	    

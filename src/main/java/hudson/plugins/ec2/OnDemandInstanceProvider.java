@@ -13,7 +13,6 @@ import java.util.Set;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang.StringUtils;
-import org.jenkinsci.plugins.ec2axis.Ec2NodeAdderTask;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
@@ -75,7 +74,7 @@ public class OnDemandInstanceProvider {
         AmazonEC2 ec2 = cloud.connect();
 
         logger.println("Launching " + ami + " for template " + description);
-        List<EC2AbstractSlave> allocatedSlaves = (List<EC2AbstractSlave>) requestStoppedInstancesToAllocation(ec2, keyPair);
+        final List<EC2AbstractSlave> allocatedSlaves = (List<EC2AbstractSlave>) requestStoppedInstancesToAllocation(ec2, keyPair);
         int instancesRemainingToCreate = numberOfInstancesToCreate - allocatedSlaves.size();
         if (instancesRemainingToCreate == 0)
         	return allocatedSlaves;
@@ -101,7 +100,7 @@ public class OnDemandInstanceProvider {
         	logger.println("Slave "+ newOndemandSlave.getDisplayName() +" created for instance "+inst.getInstanceId());
         	allocatedSlaves.add(newOndemandSlave);
 		}
-        Ec2NodeAdderTask.offerAndWaitForCompletion(allocatedSlaves.toArray(new EC2AbstractSlave[0]));
+        Utils.addNodesAndWait(allocatedSlaves);
         
         OnDemandSlaveLauncher.launchSlaves(allocatedSlaves, logger);
         return allocatedSlaves;

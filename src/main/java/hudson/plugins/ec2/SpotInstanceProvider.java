@@ -1,16 +1,15 @@
 package hudson.plugins.ec2;
 
-import hudson.model.Hudson;
 import hudson.model.Descriptor.FormException;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
-import org.jenkinsci.plugins.ec2axis.Ec2NodeAdderTask;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
@@ -65,8 +64,6 @@ public class SpotInstanceProvider {
 	
 	public List<EC2AbstractSlave> provisionMultiple(int numberOfInstancesToCreate)
 					throws AmazonClientException, IOException {
-		List<EC2AbstractSlave> spotSlaves = new ArrayList<EC2AbstractSlave>();
-
 		try{
 			logger.println("Launching " + ami + " for template " + description);
 
@@ -133,6 +130,7 @@ public class SpotInstanceProvider {
 					inst_tags.add(new Tag(t.getName(), t.getValue()));
 				}
 			}
+			List<EC2AbstractSlave> spotSlaves = new ArrayList<EC2AbstractSlave>();
 			for (SpotInstanceRequest spotInstanceRequest : reqInstances) {
 				if (spotInstanceRequest == null){
 					logger.println("Spot instance request is null");
@@ -150,9 +148,8 @@ public class SpotInstanceProvider {
 				String slaveName = description.replace(" ", "") + "@"+spotInstanceRequestId;
 				EC2SpotSlave newSpotSlave = slaveTemplate.newSpotSlave(spotInstanceRequest, slaveName);
 				spotSlaves.add(newSpotSlave);
-				Ec2NodeAdderTask.offer(newSpotSlave);
 			}
-			Ec2NodeAdderTask.waitForCompletion();
+			Utils.addNodesAndWait(spotSlaves);
 			
 			monitorSpotRequestsAndMakeThemConnectToJenkins(ec2, reqInstances, spotSlaves);
 			

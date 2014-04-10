@@ -14,8 +14,7 @@ public class Ec2SafeNodeTaskWorker extends PeriodicWork {
 	private static BlockingQueue<FutureTask<Void>> tasks = new LinkedBlockingQueue<>();
 	
 	public static void invokeAndWait(final Runnable task) {
-		FutureTask<Void> futureTask = new FutureTask<>(task, null);
-		tasks.offer(futureTask);
+		FutureTask<Void> futureTask = invoke(task);
 		try {
 			futureTask.get();
 		} catch (InterruptedException | ExecutionException e) {
@@ -37,5 +36,12 @@ public class Ec2SafeNodeTaskWorker extends PeriodicWork {
 			safeEc2Task.run();
 		}
 	}
+
+	public static FutureTask<Void> invoke(final Runnable task) {
+		FutureTask<Void> futureTask = new FutureTask<>(task, null);
+		tasks.offer(futureTask);
+		return futureTask;
+	}
+		
 
 }

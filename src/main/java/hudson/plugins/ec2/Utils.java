@@ -24,7 +24,8 @@ public class Utils {
 
 	public static void addNodesAndWait(final List<EC2AbstractSlave> allocatedSlaves) {
 		Ec2SafeNodeTaskWorker.invokeAndWait(new Runnable() {
-			@Override public void run() { for (EC2AbstractSlave nodeToAdd : allocatedSlaves) {
+			@Override public void run() { 
+				for (EC2AbstractSlave nodeToAdd : allocatedSlaves) {
 					try {
 						Jenkins.getInstance().addNode(nodeToAdd);
 					} catch (IOException e) {

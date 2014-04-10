@@ -5,9 +5,10 @@ import hudson.model.Descriptor.FormException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+
+import jenkins.model.Jenkins;
 
 import org.apache.commons.lang.StringUtils;
 
@@ -64,99 +65,104 @@ public class SpotInstanceProvider {
 	
 	public List<EC2AbstractSlave> provisionMultiple(int numberOfInstancesToCreate)
 					throws AmazonClientException, IOException {
-		try{
-			logger.println("Launching " + ami + " for template " + description);
+		logger.println("Launching " + ami + " for template " + description);
 
-			RequestSpotInstancesRequest spotRequest = new RequestSpotInstancesRequest();
+		RequestSpotInstancesRequest spotRequest = new RequestSpotInstancesRequest();
 
-			if (spotMaxBidPrice == null){
-				throw new AmazonClientException("Invalid Spot price specified: " + spotMaxBidPrice);
-			}
-
-			spotRequest.setSpotPrice(spotMaxBidPrice);
-			spotRequest.setInstanceCount(numberOfInstancesToCreate);
-			spotRequest.setType(bidType);
-
-			LaunchSpecification launchSpecification = new LaunchSpecification();
-
-			launchSpecification.setImageId(ami);
-			launchSpecification.setInstanceType(type);
-
-			if (StringUtils.isNotBlank(zone)) {
-				SpotPlacement placement = new SpotPlacement(zone);
-				launchSpecification.setPlacement(placement);
-			}
-
-			if (StringUtils.isNotBlank(subnetId)) {
-				launchSpecification.setSubnetId(subnetId);
-
-				/* If we have a subnet ID then we can only use VPC security groups */
-				if (!securityGroupSet.isEmpty()) {
-                    List<String> group_ids = ec2SecurityGroups;
-                    ArrayList<GroupIdentifier> groups = new ArrayList<GroupIdentifier>();
-
-                    for (String group_id : group_ids) {
-                      GroupIdentifier group = new GroupIdentifier();
-                      group.setGroupId(group_id);
-                      groups.add(group);
-                    }
-
-                    if (!groups.isEmpty())
-                        launchSpecification.setAllSecurityGroups(groups);
-                }
-			} else {
-				/* No subnet: we can use standard security groups by name */
-				if (securityGroupSet.size() > 0)
-					launchSpecification.setSecurityGroups(securityGroupSet);
-			}
-
-			launchSpecification.setKeyName(keyPair.getKeyName());
-			launchSpecification.setInstanceType(type.toString());
-
-			spotRequest.setLaunchSpecification(launchSpecification);
-
-			AmazonEC2 ec2 = cloud.connect();
-			RequestSpotInstancesResult reqResult = ec2 .requestSpotInstances(spotRequest);
-
-			List<SpotInstanceRequest> reqInstances = reqResult.getSpotInstanceRequests();
-			if (reqInstances.size() <= 0){
-				throw new AmazonClientException("No spot instances found");
-			}
-
-			HashSet<Tag> inst_tags = null;
-			if (tags != null && !tags.isEmpty()) {
-				inst_tags = new HashSet<Tag>();
-				for(EC2Tag t : tags) {
-					inst_tags.add(new Tag(t.getName(), t.getValue()));
-				}
-			}
-			List<EC2AbstractSlave> spotSlaves = new ArrayList<EC2AbstractSlave>();
-			for (SpotInstanceRequest spotInstanceRequest : reqInstances) {
-				if (spotInstanceRequest == null){
-					logger.println("Spot instance request is null");
-					continue;
-				}
-				/* Now that we have our Spot request, we can set tags on it */
-				String spotInstanceRequestId = spotInstanceRequest.getSpotInstanceRequestId();
-				if (inst_tags != null) {
-					slaveTemplate.updateRemoteTags(ec2, inst_tags, spotInstanceRequestId);
-					// That was a remote request - we should also update our local instance data.
-					spotInstanceRequest.setTags(inst_tags);
-				}
-				
-				logger.println("Spot instance id in provision: " + spotInstanceRequestId);
-				String slaveName = description.replace(" ", "") + "@"+spotInstanceRequestId;
-				EC2SpotSlave newSpotSlave = slaveTemplate.newSpotSlave(spotInstanceRequest, slaveName);
-				spotSlaves.add(newSpotSlave);
-			}
-			Utils.addNodesAndWait(spotSlaves);
-			
-			monitorSpotRequestsAndMakeThemConnectToJenkins(ec2, reqInstances, spotSlaves);
-			
-			return spotSlaves;
-		}  catch (FormException e) {
-			throw new AssertionError();
+		if (spotMaxBidPrice == null){
+			throw new AmazonClientException("Invalid Spot price specified: " + spotMaxBidPrice);
 		}
+
+		spotRequest.setSpotPrice(spotMaxBidPrice);
+		spotRequest.setInstanceCount(numberOfInstancesToCreate);
+		spotRequest.setType(bidType);
+
+		LaunchSpecification launchSpecification = new LaunchSpecification();
+
+		launchSpecification.setImageId(ami);
+		launchSpecification.setInstanceType(type);
+
+		if (StringUtils.isNotBlank(zone)) {
+			SpotPlacement placement = new SpotPlacement(zone);
+			launchSpecification.setPlacement(placement);
+		}
+
+		if (StringUtils.isNotBlank(subnetId)) {
+			launchSpecification.setSubnetId(subnetId);
+
+			/* If we have a subnet ID then we can only use VPC security groups */
+			if (!securityGroupSet.isEmpty()) {
+                List<String> group_ids = ec2SecurityGroups;
+                ArrayList<GroupIdentifier> groups = new ArrayList<GroupIdentifier>();
+
+                for (String group_id : group_ids) {
+                  GroupIdentifier group = new GroupIdentifier();
+                  group.setGroupId(group_id);
+                  groups.add(group);
+                }
+
+                if (!groups.isEmpty())
+                    launchSpecification.setAllSecurityGroups(groups);
+            }
+		} else {
+			/* No subnet: we can use standard security groups by name */
+			if (securityGroupSet.size() > 0)
+				launchSpecification.setSecurityGroups(securityGroupSet);
+		}
+
+		launchSpecification.setKeyName(keyPair.getKeyName());
+		launchSpecification.setInstanceType(type.toString());
+
+		spotRequest.setLaunchSpecification(launchSpecification);
+
+		AmazonEC2 ec2 = cloud.connect();
+		RequestSpotInstancesResult reqResult = ec2 .requestSpotInstances(spotRequest);
+
+		List<SpotInstanceRequest> reqInstances = reqResult.getSpotInstanceRequests();
+		if (reqInstances.size() <= 0){
+			throw new AmazonClientException("No spot instances found");
+		}
+
+		HashSet<Tag> inst_tags = null;
+		if (tags != null && !tags.isEmpty()) {
+			inst_tags = new HashSet<Tag>();
+			for(EC2Tag t : tags) {
+				inst_tags.add(new Tag(t.getName(), t.getValue()));
+			}
+		}
+		final List<EC2AbstractSlave> spotSlaves = new ArrayList<EC2AbstractSlave>();
+		SynchronousSafeTask syncSafeTask = new SynchronousSafeTask();
+		for (final SpotInstanceRequest spotInstanceRequest : reqInstances) {
+			if (spotInstanceRequest == null){
+				logger.println("Spot instance request is null");
+				continue;
+			}
+			/* Now that we have our Spot request, we can set tags on it */
+			String spotInstanceRequestId = spotInstanceRequest.getSpotInstanceRequestId();
+			if (inst_tags != null) {
+				slaveTemplate.updateRemoteTags(ec2, inst_tags, spotInstanceRequestId);
+				// That was a remote request - we should also update our local instance data.
+				spotInstanceRequest.setTags(inst_tags);
+			}
+			
+			logger.println("Spot instance id in provision: " + spotInstanceRequestId);
+			final String slaveName = description.replace(" ", "") + "@"+spotInstanceRequestId;
+			syncSafeTask.invoke(new Runnable() {  @Override public void run() {
+					EC2SpotSlave newSpotSlave;
+					try {
+						newSpotSlave = slaveTemplate.newSpotSlave(spotInstanceRequest, slaveName);
+						Jenkins.getInstance().addNode(newSpotSlave);
+					} catch (FormException | IOException e) {
+						throw new RuntimeException(e);
+					}
+ 					spotSlaves.add(newSpotSlave);
+ 				}
+			});
+		}
+		syncSafeTask.waitCompletion();
+		monitorSpotRequestsAndMakeThemConnectToJenkins(ec2, reqInstances, spotSlaves);
+		
+		return spotSlaves;
 	}
 	
 	private void monitorSpotRequestsAndMakeThemConnectToJenkins(

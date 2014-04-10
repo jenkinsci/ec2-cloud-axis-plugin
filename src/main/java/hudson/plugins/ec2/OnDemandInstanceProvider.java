@@ -11,6 +11,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
+import jenkins.model.Jenkins;
+
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang.StringUtils;
 
@@ -89,18 +91,26 @@ public class OnDemandInstanceProvider {
     	RunInstancesRequest runInstanceRequest = createRunInstanceRequest(ec2, instancesRemainingToCreate, keyPair);
         List<Instance> createdInstances = ec2.runInstances(runInstanceRequest).getReservation().getInstances();
         logger.println("Sent instance creation request. Allocated instance count : " + createdInstances.size() );
-        for (Instance inst : createdInstances) {
+        SynchronousSafeTask syncSafeTask = new SynchronousSafeTask();
+        for (final Instance inst : createdInstances) {
         	if (inst_tags.size() > 0) {
         		slaveTemplate.updateRemoteTags(ec2, inst_tags, inst.getInstanceId());
         		inst.setTags(inst_tags);
         	}
         	logger.println("Creating instance: "+inst.getInstanceId());
         	
-        	EC2OndemandSlave newOndemandSlave = newOnDemandSlaveOrCry(inst);
-        	logger.println("Slave "+ newOndemandSlave.getDisplayName() +" created for instance "+inst.getInstanceId());
-        	allocatedSlaves.add(newOndemandSlave);
+        	syncSafeTask.invoke(new Runnable() {  @Override public void run() {
+				EC2OndemandSlave newOndemandSlave = newOnDemandSlaveOrCry(inst);
+				logger.println("Slave "+ newOndemandSlave.getDisplayName() +" created for instance "+inst.getInstanceId());
+				allocatedSlaves.add(newOndemandSlave);
+				try {
+					Jenkins.getInstance().addNode(newOndemandSlave);
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+			}});
 		}
-        Utils.addNodesAndWait(allocatedSlaves);
+        syncSafeTask.waitCompletion();
         
         OnDemandSlaveLauncher.launchSlaves(allocatedSlaves, logger);
         return allocatedSlaves;

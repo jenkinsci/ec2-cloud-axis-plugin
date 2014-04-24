@@ -2,6 +2,7 @@ package hudson.plugins.ec2;
 
 import hudson.model.TaskListener;
 import hudson.model.Descriptor.FormException;
+import hudson.plugins.ec2.utils.ExecutorUtils;
 import hudson.slaves.NodeProperty;
 
 import java.io.IOException;
@@ -12,6 +13,7 @@ import java.util.Date;
 import java.util.List;
 
 import com.amazonaws.AmazonClientException;
+import com.amazonaws.AmazonServiceException;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.CreateTagsRequest;
 import com.amazonaws.services.ec2.model.DescribeSecurityGroupsRequest;
@@ -132,11 +134,27 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
     /**
      * Update the tags stored in EC2 with the specified information
      */
-    void updateRemoteTags(AmazonEC2 ec2, Collection<Tag> inst_tags, String... params) {
-    	CreateTagsRequest tag_request = new CreateTagsRequest();
+    void updateRemoteTags(final AmazonEC2 ec2, Collection<Tag> inst_tags, String... params) {
+    	final CreateTagsRequest tag_request = new CreateTagsRequest();
         tag_request.withResources(params).setTags(inst_tags);
-        ec2.createTags(tag_request);
+		updateRemoteTags_RetryingIfSpotIdNotFound(ec2, tag_request);
     }
+
+	public void updateRemoteTags_RetryingIfSpotIdNotFound(final AmazonEC2 ec2,
+			final CreateTagsRequest tag_request) {
+		ExecutorUtils.runBlockWithTimeoutInSeconds(new Runnable() {  @Override public void run() {
+			while(true) {
+		        try {
+		        	ec2.createTags(tag_request);
+		        	return;
+		        }catch(AmazonServiceException ex) {
+		        	if (!ex.getMessage().contains("InvalidSpotInstanceRequestID.NotFound"))
+		        		throw ex;
+		        }
+		        try { Thread.sleep(100); } catch (InterruptedException e) { return; }
+			}
+		} }, 30);
+	}
     
 	public void setInstanceLabel(String displayName) {
 		this.instanceLabel = displayName;

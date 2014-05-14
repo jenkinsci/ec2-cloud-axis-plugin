@@ -25,6 +25,7 @@ public class ExecutorUtils {
 		try {
 		   future.get(timeout, timeUnit); 
 		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
 		} catch (ExecutionException e) {
 		   throw new RuntimeException(e);
 		} catch (TimeoutException e) {

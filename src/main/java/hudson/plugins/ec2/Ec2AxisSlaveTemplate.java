@@ -68,7 +68,7 @@ public class Ec2AxisSlaveTemplate extends SlaveTemplate {
 	
 	public List<EC2AbstractSlave> provisionMultipleSlaves(EC2Logger logger, int numberOfInstancesToCreate) {
 		try {
-			AmazonEC2 ec2 = getParent().connect();
+			AmazonEC2 ec2 = AmazonEC2Insistent.wrap(getParent().connect(), logger);
 			KeyPair keyPair = getKeyPair(ec2);
 			List<String> ec2SecurityGroups = getEc2SecurityGroups(ec2);
 			

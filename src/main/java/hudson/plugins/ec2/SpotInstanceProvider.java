@@ -115,7 +115,7 @@ public class SpotInstanceProvider {
 
 		spotRequest.setLaunchSpecification(launchSpecification);
 
-		AmazonEC2 ec2 = cloud.connect();
+		AmazonEC2 ec2 = AmazonEC2Insistent.wrap(cloud.connect(), logger);
 		RequestSpotInstancesResult reqResult = ec2 .requestSpotInstances(spotRequest);
 
 		List<SpotInstanceRequest> reqInstances = reqResult.getSpotInstanceRequests();

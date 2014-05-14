@@ -73,7 +73,7 @@ public class OnDemandInstanceProvider {
 	public List<EC2AbstractSlave> provisionMultiple(int numberOfInstancesToCreate) 
 			throws AmazonClientException, IOException {
 		
-        AmazonEC2 ec2 = cloud.connect();
+        AmazonEC2 ec2 = AmazonEC2Insistent.wrap(cloud.connect(), logger);
 
         logger.println("Launching " + ami + " for template " + description);
         final List<EC2AbstractSlave> allocatedSlaves = (List<EC2AbstractSlave>) requestStoppedInstancesToAllocation(ec2, keyPair);
@@ -263,7 +263,8 @@ public class OnDemandInstanceProvider {
     }
 	
 	private List<BlockDeviceMapping> getAmiBlockDeviceMappings() {
-        for (final Image image: cloud.connect().describeImages().getImages()) {
+		final AmazonEC2 ec2 = AmazonEC2Insistent.wrap(cloud.connect(), logger);
+		for (final Image image: ec2.describeImages().getImages()) {
             if (ami.equals(image.getImageId())) {
                 return image.getBlockDeviceMappings();
             }

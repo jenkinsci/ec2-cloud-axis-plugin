@@ -46,24 +46,7 @@ public class AmazonEC2InsistentTest {
 		assertEquals(expectedResult, result);
 	}
 	
-	@Test
-	public void errorWhenMethodThrow503ErrorSixTimes() {
-		AmazonServiceException ex = new AmazonServiceException("Service Error");
-		ex.setStatusCode(503);
-		when(ec2.allocateAddress())
-			.thenThrow(ex)
-			.thenThrow(ex)
-			.thenThrow(ex)
-			.thenThrow(ex)
-			.thenThrow(ex)
-			.thenThrow(ex);
-		
-		expectedException.expect(AmazonServiceException.class );
-		expectedException.expectMessage("Service Error");
-		
-		subject.allocateAddress();	
-	}
-	
+
 	@Test
 	public void errorWhenMethodThrow404Error() {
 		AmazonServiceException ex = new AmazonServiceException("Service Error");

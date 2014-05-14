@@ -9,7 +9,6 @@ import com.amazonaws.AmazonServiceException;
 import com.amazonaws.services.ec2.AmazonEC2;
 
 public class AmazonEC2Insistent implements InvocationHandler {
-	private static final int MAX_RETRIES = 5;
 	
 	private final AmazonEC2 delegate;
 	private final int waitTimeToRetryInSeconds;
@@ -32,7 +31,6 @@ public class AmazonEC2Insistent implements InvocationHandler {
 
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-		int retryCount = 0;
 		while (true) {
 			try {
 				return method.invoke(delegate, args);
@@ -40,8 +38,7 @@ public class AmazonEC2Insistent implements InvocationHandler {
 			} catch (InvocationTargetException invocationException) {
 				Throwable ex = invocationException.getTargetException();
 				if (ex instanceof AmazonServiceException) {
-					handleAwsException((AmazonServiceException) ex, retryCount, method.getName());
-	                retryCount++;
+					handleAwsException((AmazonServiceException) ex, method.getName());
 				} else {				
 					throw ex;
 				}
@@ -49,21 +46,12 @@ public class AmazonEC2Insistent implements InvocationHandler {
 		}
 	}
 
-	private void handleAwsException(AmazonServiceException ex, int retryCount, String methodName) {
-		if (retryCount > MAX_RETRIES || ex.getStatusCode() != 503)
+	private void handleAwsException(AmazonServiceException ex, String methodName) {
+		if (ex.getStatusCode() != 503)
 			throw ex;
 		
 		logger.println("Error 503 (" + ex.getMessage() + ") calling " + methodName + ". Retry...");
-		threadSleep(waitTimeToRetryInSeconds * retryCount);
+		ThreadUtils.sleepWithoutInterruptions(waitTimeToRetryInSeconds * 1000);
     }
-
-	private void threadSleep(int sec) {
-		try {
-        	Thread.sleep(1000 * sec);
-        } catch (InterruptedException ex1) {
-        	logger.println("Retry sleep interrupted");
-        }
-	}
-
 
 }

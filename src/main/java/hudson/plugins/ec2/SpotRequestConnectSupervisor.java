@@ -52,7 +52,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		this.logger = logger;
 		this.reqInstances = reqInstances;
 		this.spotSlaves = spotSlaves;
-		this.ec2 = AmazonEC2Insistent.wrap(ec2, logger);
+		this.ec2 = ec2;
 		this.privateKey = privateKey;
 		this.remoteAdmin = remoteAdmin;
 	}

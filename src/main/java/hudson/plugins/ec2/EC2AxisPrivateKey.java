@@ -25,21 +25,12 @@ package hudson.plugins.ec2;
 
 import hudson.util.Secret;
 
-import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.Reader;
-import java.io.StringReader;
-import java.security.DigestInputStream;
-import java.security.KeyPair;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.Security;
+import java.security.*;
 
+import jenkins.bouncycastle.api.PEMEncodable;
 import org.apache.commons.codec.binary.Hex;
-import org.bouncycastle.openssl.PEMReader;
-import org.bouncycastle.openssl.PasswordFinder;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
@@ -66,40 +57,14 @@ final class EC2AxisPrivateKey {
      * Obtains the fingerprint of the key in the "ab:cd:ef:...:12" format.
      */
     public String getFingerprint() throws IOException {
-        Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
-        @SuppressWarnings("deprecation")
-		Reader r = new BufferedReader(new StringReader(privateKey.toString()));
-        @SuppressWarnings("resource")
-		PEMReader pem = new PEMReader(r,new PasswordFinder() {
-            public char[] getPassword() {
-                throw PRIVATE_KEY_WITH_PASSWORD;
-            }
-        });
-
         try {
-            KeyPair pair = (KeyPair) pem.readObject();
+            KeyPair pair = PEMEncodable.decode(privateKey.getPlainText()).toKeyPair();
             if(pair==null)  return null;
             PrivateKey key = pair.getPrivate();
             return digest(key);
-        } catch (RuntimeException e) {
-            if (e==PRIVATE_KEY_WITH_PASSWORD)
-                throw new IOException("This private key is password protected, which isn't supported yet");
-            throw e;
+        } catch (UnrecoverableKeyException e) {
+            throw new IOException("This private key is password protected, which isn't supported yet");
         }
-    }
-
-    /**
-     * Is this file really a private key?
-     */
-    public boolean isPrivateKey() throws IOException {
-        @SuppressWarnings("deprecation")
-		BufferedReader br = new BufferedReader(new StringReader(privateKey.toString()));
-        String line;
-        while ((line = br.readLine()) != null) {
-            if (line.equals("-----BEGIN RSA PRIVATE KEY-----"))
-                return true;
-        }
-        return false;
     }
 
     /**

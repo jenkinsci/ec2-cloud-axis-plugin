@@ -1,3 +1,5 @@
+/.idea
+/ec2-cloud-axis.iml
 .classpath
 .project
 .settings

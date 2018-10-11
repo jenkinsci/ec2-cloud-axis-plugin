@@ -129,10 +129,9 @@ final class EC2AxisPrivateKey {
         return that instanceof EC2AxisPrivateKey && this.privateKey.equals(((EC2AxisPrivateKey)that).privateKey);
     }
 
-    @SuppressWarnings("deprecation")
-	@Override
+    @Override
     public String toString() {
-        return privateKey.toString();
+        return privateKey.getPlainText();
     }
 
     /*package*/ static String digest(PrivateKey k) throws IOException {

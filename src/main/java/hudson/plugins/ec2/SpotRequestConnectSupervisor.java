@@ -195,7 +195,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 					startSlaveAgentOnRemoteInstance(slaveToAssociate, jenkinsUrl, sshConnection);
 					logger.println("Successfully connected to "+privateIpAddress);
 					return true; 
-				}catch(Exception e) {
+				} catch (IOException | InterruptedException e) {
 					return false;
 				}
 			}
@@ -204,7 +204,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 				logger.println(message);
 				throw new RuntimeException(message);
 			}
-		}catch(Exception e) {
+		} catch (IOException e) {
 			return false;
 		}
 	}

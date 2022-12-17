@@ -22,6 +22,7 @@ import java.text.MessageFormat;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -215,6 +216,27 @@ public class EC2Axis extends LabelAxis {
 	public void setCreateMatrixEnvironmentVariable(
 			boolean createMatrixEnvironmentVariable) {
 		this.createMatrixEnvironmentVariable = createMatrixEnvironmentVariable;
+	}
+
+	public int hashCode() {
+                return Objects.hash(name, ec2label, numberOfSlaves, instanceBootTimeoutLimit, createMatrixEnvironmentVariable);
+	}
+
+	public boolean equals(Object obj) {
+            if (obj == null) {
+                return false;
+            }
+            if (obj.getClass() != this.getClass()) {
+                return false;
+            }
+            EC2Axis other = (EC2Axis) obj;
+            return
+                Objects.equals(other.name, this.name) &&
+                Objects.equals(other.ec2label, this.ec2label) &&
+                Objects.equals(other.numberOfSlaves, this.numberOfSlaves) &&
+                Objects.equals(other.alwaysCreateNewNodes, this.alwaysCreateNewNodes) &&
+                Objects.equals(other.instanceBootTimeoutLimit, this.instanceBootTimeoutLimit) &&
+                Objects.equals(other.createMatrixEnvironmentVariable, this.createMatrixEnvironmentVariable);
 	}
 
 	@Extension

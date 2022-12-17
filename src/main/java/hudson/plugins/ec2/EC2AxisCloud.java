@@ -50,8 +50,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 	@Override
 	public Ec2AxisSlaveTemplate getTemplate(Label label) {
 		String displayName = label.getDisplayName();
-		if (displayName == null)
-			return null;
 		
     	String labelPrefix = StringUtils.substringBefore(displayName,SLAVE_NUM_SEPARATOR);
 		LabelAtom prefixAtom = new LabelAtom(labelPrefix);
@@ -205,8 +203,6 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 
 	private Ec2AxisSlaveTemplate getTemplateGivenLabel(Label label) {
 		String displayName = label.getDisplayName();
-		if (displayName == null)
-			return null;
 		
     	String labelPrefix = StringUtils.substringBefore(displayName,SLAVE_NUM_SEPARATOR);
 		LabelAtom prefixAtom = new LabelAtom(labelPrefix);

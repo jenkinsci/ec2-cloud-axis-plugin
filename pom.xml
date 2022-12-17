@@ -3,7 +3,8 @@
   <parent>
     <groupId>org.jenkins-ci.plugins</groupId>
     <artifactId>plugin</artifactId>
-    <version>1.538</version><!-- which version of Jenkins is this plugin built against? -->
+    <version>4.51</version>
+    <relativePath />
   </parent>
 
   <artifactId>ec2-cloud-axis</artifactId>
@@ -26,60 +27,62 @@
   </pluginRepositories>
 
   <properties>
-    <!--
-      explicitly specifying the latest version here because one we get from the parent POM
-      tends to lag behind a bit
-    -->
-    <maven-hpi-plugin.version>1.95</maven-hpi-plugin.version>
+    <jenkins.version>2.346.3</jenkins.version>
+    <bc-version>1.72</bc-version>
   </properties>
 
-	<dependencies>
-		<dependency>
-			<groupId>org.jenkins-ci.plugins</groupId>
-			<artifactId>ec2</artifactId>
-			<version>1.19</version>
-		</dependency>
-		<dependency>
-			<groupId>org.hamcrest</groupId>
-			<artifactId>hamcrest-core</artifactId>
-			<version>1.3</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.hamcrest</groupId>
-			<artifactId>hamcrest-library</artifactId>
-			<version>1.3</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.mockito</groupId>
-			<artifactId>mockito-all</artifactId>
-			<version>1.9.5</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>junit</groupId>
-			<artifactId>junit</artifactId>
-			<version>4.13.1</version>
-			<scope>test</scope>
-		</dependency>
-	</dependencies>
+  <dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.jenkins.tools.bom</groupId>
+            <artifactId>bom-2.346.x</artifactId>
+            <version>1750.v0071fa_4c4a_e3</version>
+            <scope>import</scope>
+            <type>pom</type>
+        </dependency>
+    </dependencies>
+  </dependencyManagement>
 
-  <build>
-      <plugins>
-        <plugin>
-          <artifactId>maven-compiler-plugin</artifactId>
-          <configuration>
-            <source>1.7</source>
-            <target>1.7</target>
-            <encoding>UTF8</encoding>
-          </configuration>
-        </plugin>
-      </plugins>
-  </build>  
+  <dependencies>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>ec2</artifactId>
+      <version>1.19</version>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>matrix-project</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>trilead-api</artifactId>
+      <exclusions>
+        <exclusion>
+	  <groupId>org.json</groupId>
+	  <artifactId>json</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <version>${bc-version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bc-version}</version>
+    </dependency>
+  </dependencies>
+
   <scm>
-    <connection>scm:git:ssh://github.com/jenkinsci/ec2-cloud-axis-plugin.git</connection>
-    <developerConnection>scm:git:ssh://git@github.com/jenkinsci/ec2-cloud-axis-plugin.git</developerConnection>
+    <connection>scm:git:https://github.com:jenkinsci/ec2-cloud-axis-plugin.git</connection>
+    <developerConnection>scm:git:git@github.com:jenkinsci/ec2-cloud-axis-plugin.git</developerConnection>
     <url>https://github.com/jenkinsci/ec2-cloud-axis-plugin</url>
   </scm>
   <url>http://wiki.jenkins-ci.org/display/JENKINS/EC2+Cloud+Axis</url>

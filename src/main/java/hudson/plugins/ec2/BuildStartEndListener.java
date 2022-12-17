@@ -1,5 +1,7 @@
 package hudson.plugins.ec2;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.PrintWriter;
@@ -9,6 +11,8 @@ import org.apache.commons.io.output.NullOutputStream;
 import hudson.console.ConsoleNote;
 import hudson.model.BuildListener;
 
+@SuppressFBWarnings(value = "DM_DEFAULT_ENCODING",
+                    justification = "Encoding to null output stream is not a problem")
 @SuppressWarnings("serial")
 public abstract class BuildStartEndListener implements BuildListener {
 	private static PrintStream nullOutputStream = new PrintStream(new NullOutputStream());

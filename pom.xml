@@ -28,7 +28,6 @@
 
   <properties>
     <jenkins.version>2.346.3</jenkins.version>
-    <bc-version>1.72</bc-version>
   </properties>
 
   <dependencyManagement>
@@ -69,14 +68,8 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.bouncycastle</groupId>
-      <artifactId>bcpkix-jdk18on</artifactId>
-      <version>${bc-version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.bouncycastle</groupId>
-      <artifactId>bcprov-jdk18on</artifactId>
-      <version>${bc-version}</version>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>bouncycastle-api</artifactId>
     </dependency>
   </dependencies>
 

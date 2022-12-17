@@ -29,7 +29,12 @@ final class OnDemandSlaveLauncher implements Runnable {
 		Future<?> connectionPromise;
 		String displayName = slave.getDisplayName();
 		do {
-			connectionPromise = slave.toComputer().connect(false);
+                        hudson.model.Computer computer = slave.toComputer();
+                        if (computer == null) {
+				logger.println("No node for " + displayName);
+				return;
+                        }
+			connectionPromise = computer.connect(false);
 			if (waitForConnection(connectionPromise))
 				return;
 			try {

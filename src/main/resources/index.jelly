@@ -1,6 +1,7 @@
 <!--
   This view is used to render the installed plugins page.
 -->
+<?jelly escape-by-default='true'?>
 <div>
   Adds an axis for matrix builds to run over an arbitrary number of EC2 instances, which will be dinamically allocated or reused if possible.
   Requires the EC2 plugin.

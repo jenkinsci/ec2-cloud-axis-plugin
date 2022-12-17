@@ -251,6 +251,9 @@ public class EC2Axis extends LabelAxis {
 				return FormValidation.ok(); 
 			
 			Label l = Jenkins.getInstance().getLabel(oneLabel);
+                        if (l == null) {
+				return FormValidation.warning("No agent/cloud matches this label expression.");
+                        }
 			if (l.isEmpty()) {
 				for (LabelAtom a : l.listAtoms()) {
 					if (a.isEmpty()) {

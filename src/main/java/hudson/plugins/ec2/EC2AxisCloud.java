@@ -177,6 +177,10 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		logger.println("Will check " + ec2Label);
 		
 		Label label = Jenkins.getInstance().getLabel(getAxisLabel(ec2Label));
+		if (label == null) {
+			logger.println("Null label for " + ec2Label);
+			return onlineAndAvailableLabels;
+		}
 		
 		for (Node node : label.getNodes()) {
 			if(!isNodeAvailable(logger, node)) 
@@ -214,7 +218,7 @@ public class EC2AxisCloud extends AmazonEC2Cloud {
 		String nodeName = node.getDisplayName();
 		logger.println("Checking node : " + nodeName);
 		Computer c = node.toComputer();
-		if (c.isOffline() || c.isConnecting()) 
+		if (c == null || c.isOffline() || c.isConnecting())
 			return false;
 		if (isNodeOnlineAndAvailable(c) && hasAvailableExecutor(c))
 			return true;

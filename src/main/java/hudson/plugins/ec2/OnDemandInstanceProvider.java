@@ -1,9 +1,12 @@
 package hudson.plugins.ec2;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+
 import hudson.model.Hudson;
 import hudson.model.Node;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -200,6 +203,18 @@ public class OnDemandInstanceProvider {
 		return ondemandSlave;
 	}
 
+        @SuppressFBWarnings(value = "DM_DEFAULT_ENCODING",
+                            justification = "Tried UTF-8, fallback to default")
+        private String getEncodedUserDataBytes() {
+                byte[] bytes;
+                try {
+                        bytes = userData.getBytes("UTF-8");
+                } catch (UnsupportedEncodingException e) {
+                        bytes = userData.getBytes();
+                }
+		return Base64.encodeBase64String(bytes);
+        }
+
 	private RunInstancesRequest createRunInstanceRequest(AmazonEC2 ec2, int numberOfInstancesToCreate, KeyPair keyPair) 
 	{
 		RunInstancesRequest runInstanceRequest = new RunInstancesRequest(ami, numberOfInstancesToCreate, numberOfInstancesToCreate);
@@ -222,7 +237,7 @@ public class OnDemandInstanceProvider {
 			runInstanceRequest.setSecurityGroups(securityGroupSet);
 		}
 
-		String userDataString = Base64.encodeBase64String(userData.getBytes());
+		String userDataString = getEncodedUserDataBytes();
 		runInstanceRequest.setUserData(userDataString);
 		runInstanceRequest.setKeyName(keyPair.getKeyName());
 		runInstanceRequest.setInstanceType(type.toString());

@@ -1,9 +1,8 @@
 package hudson.plugins.ec2;
 
-import hudson.util.TimeUnit2;
-
 import java.util.List;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang.time.StopWatch;
 
@@ -22,7 +21,7 @@ final class OnDemandSlaveLauncher implements Runnable {
 	public void run() {
 		long timeout = EC2AxisCloud.getTimeout(slave);
 		int retryIntervalSecs = 5;
-		long retryIntervalMillis = TimeUnit2.SECONDS.toMillis(retryIntervalSecs);
+		long retryIntervalMillis = TimeUnit.SECONDS.toMillis(retryIntervalSecs);
 		long maxWait = System.currentTimeMillis() + timeout;
 		StopWatch stopwatch = new StopWatch();
 		stopwatch.start();

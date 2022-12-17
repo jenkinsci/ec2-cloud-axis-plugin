@@ -2,12 +2,12 @@ package org.jenkinsci.plugins.ec2axis;
 
 import hudson.Extension;
 import hudson.model.PeriodicWork;
-import hudson.util.TimeUnit2;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 @Extension
 public class Ec2SafeNodeTaskWorker extends PeriodicWork {
@@ -24,7 +24,7 @@ public class Ec2SafeNodeTaskWorker extends PeriodicWork {
 
 	@Override
 	public long getRecurrencePeriod() {
-		return TimeUnit2.SECONDS.toMillis(1);
+		return TimeUnit.SECONDS.toMillis(1);
 	}
 
 	@Override

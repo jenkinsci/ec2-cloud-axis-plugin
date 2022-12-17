@@ -1,12 +1,12 @@
 package hudson.plugins.ec2;
 
 import hudson.model.Hudson;
-import hudson.util.TimeUnit2;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.time.StopWatch;
@@ -150,7 +150,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 		boolean success;
 		long timeout = EC2AxisCloud.getTimeout(slaveToAssociate);
 		int retryIntervalSecs = 5;
-		long retryIntervalMillis = TimeUnit2.SECONDS.toMillis(retryIntervalSecs);
+		long retryIntervalMillis = TimeUnit.SECONDS.toMillis(retryIntervalSecs);
 		long maxWait = System.currentTimeMillis() + timeout;
 		StopWatch stopwatch = new StopWatch();
 		stopwatch.start();
@@ -222,7 +222,7 @@ final class SpotRequestConnectSupervisor implements Runnable {
 	}
 
 	private void execCommandAndWaitForCompletion(Session openSession, String cmd) throws IOException, InterruptedException {
-		long timeoutForCommand = TimeUnit2.MINUTES.toMillis(5);
+		long timeoutForCommand = TimeUnit.MINUTES.toMillis(5);
 		openSession.execCommand(cmd);
 		openSession.waitForCondition(ChannelCondition.EXIT_STATUS, timeoutForCommand);
 		Integer exitStatus = openSession.getExitStatus();

@@ -18,6 +18,7 @@ import hudson.plugins.ec2.EC2AxisCloud;
 import hudson.plugins.ec2.EC2Logger;
 import hudson.util.FormValidation;
 
+import java.text.MessageFormat;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -254,10 +255,10 @@ public class EC2Axis extends LabelAxis {
 				for (LabelAtom a : l.listAtoms()) {
 					if (a.isEmpty()) {
 						LabelAtom nearest = LabelAtom.findNearest(a.getName());
-						return FormValidation.warning(Messages.AbstractProject_AssignedLabelString_NoMatch_DidYouMean(a.getName(),nearest.getDisplayName()));
+						return FormValidation.warning(MessageFormat.format("No agent/cloud matches this label expression. Did you mean ‘{1}’ instead of ‘{0}’?", a.getName(), nearest.getDisplayName()));
 					}
 				}
-				return FormValidation.warning(Messages.AbstractProject_AssignedLabelString_NoMatch());
+				return FormValidation.warning("No agent/cloud matches this label expression.");
 			}
 			return FormValidation.ok();
 		}

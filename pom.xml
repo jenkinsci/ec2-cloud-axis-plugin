@@ -27,14 +27,16 @@
   </pluginRepositories>
 
   <properties>
-    <jenkins.version>2.346.3</jenkins.version>
+    <!-- https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/ -->
+    <jenkins.baseline>2.346</jenkins.baseline>
+    <jenkins.version>${jenkins.baseline}.3</jenkins.version>
   </properties>
 
   <dependencyManagement>
     <dependencies>
         <dependency>
             <groupId>io.jenkins.tools.bom</groupId>
-            <artifactId>bom-2.346.x</artifactId>
+            <artifactId>bom-${jenkins.baseline}.x</artifactId>
             <version>1763.v092b_8980a_f5e</version>
             <scope>import</scope>
             <type>pom</type>
